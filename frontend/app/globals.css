@@ -211,12 +211,6 @@ body {
   outline-offset: 1px;
 }
 
-.toolbar__hint {
-  font-size: 0.82rem;
-  color: var(--ink-faint);
-  margin-left: auto;
-}
-
 /* ---- Review type picker ---- */
 
 .review-picker {

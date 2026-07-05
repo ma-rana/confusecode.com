@@ -63,11 +63,16 @@ function nextFileId(): string {
   return `file-${fileSeq}`;
 }
 
-// The starter/pasted scratch file every session opens with.
+// The synthetic filename for the built-in scratch tab. Used as BOTH the label
+// shown on the tab/panel AND the sentinel the logic checks to recognise the
+// untouched starter (so they can never drift apart).
+const SCRATCH_NAME = "Example code";
+
+// The starter/example scratch file every session opens with.
 function starterFile(): OpenFile {
   return {
     fileId: nextFileId(),
-    filename: "pasted code",
+    filename: SCRATCH_NAME,
     language: "tsx",
     code: STARTER,
     sessions: {},
@@ -166,10 +171,10 @@ export default function Home() {
   function handleValidFile(file: FileReadOk) {
     setErrorMsg("");
 
-    // If the current tab is the pristine pasted scratch (no work done, still the
-    // starter), just load into it rather than opening a redundant blank tab.
+    // If the current tab is the pristine example scratch (no work done, still
+    // the starter), just load into it rather than opening a redundant blank tab.
     const isPristineScratch =
-      activeFile.filename === "pasted code" && !fileHasWork(activeFile);
+      activeFile.filename === SCRATCH_NAME && !fileHasWork(activeFile);
 
     if (isPristineScratch) {
       replaceActiveFile(file);
@@ -232,7 +237,7 @@ export default function Home() {
     setErrorMsg("");
     try {
       const sentName =
-        activeFile.filename === "pasted code"
+        activeFile.filename === SCRATCH_NAME
           ? `input${pastedExt(activeFile.language as EditorLanguage)}`
           : activeFile.filename;
 
@@ -326,8 +331,9 @@ export default function Home() {
         </span>
       </header>
 
-      {/* File tabs — one per open file, each with its own independent work. */}
-      {files.length > 1 && (
+      {/* File tabs — one per open file, each with its own independent work.
+         Shown even for a single file so the workspace strip is always present. */}
+      {files.length > 0 && (
         <FileTabs
           files={files}
           activeFileId={activeFileId}
@@ -345,7 +351,7 @@ export default function Home() {
 
             <p className="panel-label">
               <span>
-                {activeFile.filename === "pasted code"
+                {activeFile.filename === SCRATCH_NAME
                   ? "Your code"
                   : activeFile.filename}
               </span>
@@ -430,12 +436,6 @@ export default function Home() {
                   Finish now
                 </button>
               )}
-
-              <span className="toolbar__hint">
-                {inSession
-                  ? "Fix an issue in the editor, then re-analyze."
-                  : "Drop another file to open it in its own tab."}
-              </span>
             </div>
           </section>
 
