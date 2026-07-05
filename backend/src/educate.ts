@@ -39,6 +39,7 @@ export function educate(findings: RawFinding[]): EducationalCard[] {
       ruleId: f.ruleId,
       line: f.line,
       column: f.column,
+      detail: f.message,
     };
   });
 }

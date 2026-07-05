@@ -17,6 +17,12 @@ export interface Card {
   concept: string;
   difficulty: Difficulty;
   investigate: string;
+  /**
+   * The raw analyzer message for THIS specific finding (e.g. "'foo' is defined
+   * but never used"). Instance-specific, so it distinguishes repeated findings
+   * of the same rule from one another. May be empty for some rules.
+   */
+  detail: string;
 }
 
 /** A review type in the menu (Phase 3, §6.1). */

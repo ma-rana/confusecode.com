@@ -6,7 +6,6 @@ import { WorkLog } from "./components/WorkLog";
 import { ProgressBar } from "./components/ProgressBar";
 import { CompletionSummary } from "./components/CompletionSummary";
 import { FileDrop } from "./components/FileDrop";
-import { ConfirmSwitch } from "./components/ConfirmSwitch";
 import {
   emptySession,
   foldAnalysis,
@@ -14,7 +13,10 @@ import {
   progressOf,
   summarize,
   sessionFor,
+  openIssueCount,
+  fileHasWork,
   type SessionsByType,
+  type OpenFile,
 } from "./session";
 import type { FileReadOk, EditorLanguage } from "./file-upload";
 import { monacoMode, pastedExt } from "./file-upload";
@@ -54,23 +56,36 @@ const DETECTED_LABELS: Record<string, string> = {
   remix: "Remix",
 };
 
+// A monotonic id source for open files (names can repeat, ids never do).
+let fileSeq = 0;
+function nextFileId(): string {
+  fileSeq += 1;
+  return `file-${fileSeq}`;
+}
+
+// The starter/pasted scratch file every session opens with.
+function starterFile(): OpenFile {
+  return {
+    fileId: nextFileId(),
+    filename: "pasted code",
+    language: "tsx",
+    code: STARTER,
+    sessions: {},
+  };
+}
+
 export default function Home() {
-  const [code, setCode] = useState<string>(STARTER);
-  const [language, setLanguage] = useState<EditorLanguage>("tsx");
-  // The current file's display name. For pasted code we use a synthetic name.
-  const [filename, setFilename] = useState<string>("pasted code");
+  // The workspace: a list of open files, each with its OWN code + per-review-type
+  // sessions. Switching files preserves everything; nothing is stored server-side.
+  const [files, setFiles] = useState<OpenFile[]>(() => [starterFile()]);
+  const [activeFileId, setActiveFileId] = useState<string>(() => files[0].fileId);
+
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
   const [reviewType, setReviewType] = useState<string>("bugs");
-  // One independent work-log PER review type. Switching the "What kind of
-  // review?" button shows only that type's session; the others are preserved
-  // untouched, so returning to a type restores exactly its own progress.
-  const [sessions, setSessions] = useState<SessionsByType>({});
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   // What the server auto-detected from the last analysis, for a subtle UI note.
   const [detected, setDetected] = useState<string | null>(null);
-  // A validated file waiting on the user's confirm to switch sessions (§6.5).
-  const [pendingFile, setPendingFile] = useState<FileReadOk | null>(null);
 
   useEffect(() => {
     fetch("/api/review-types")
@@ -82,61 +97,147 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  // The active work-log = the current review type's slot (empty if never run).
-  const session = sessionFor(sessions, reviewType);
+  // ---- Active-file helpers ---------------------------------------------------
+
+  const activeFile =
+    files.find((f) => f.fileId === activeFileId) ?? files[0];
+  const session = sessionFor(activeFile.sessions, reviewType);
   const inSession = session.revision > 0;
 
-  // Load a validated file's contents into the editor, starting fresh (§6.5).
-  // A new file invalidates every review type's progress, so clear ALL slots.
-  function loadFile(file: FileReadOk) {
-    setCode(file.code);
-    setLanguage(file.language);
-    setFilename(file.filename);
-    setSessions({});
-    setStatus("idle");
-    setErrorMsg("");
-    setPendingFile(null);
+  // Update the active file immutably.
+  function patchActiveFile(patch: Partial<OpenFile>) {
+    setFiles((prev) =>
+      prev.map((f) => (f.fileId === activeFileId ? { ...f, ...patch } : f)),
+    );
   }
 
-  // The §6.5 decision flow. The file is already validated by FileDrop.
+  // Update the active file's sessions map immutably.
+  function patchActiveSessions(
+    updater: (sessions: SessionsByType) => SessionsByType,
+  ) {
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.fileId === activeFileId
+          ? { ...f, sessions: updater(f.sessions) }
+          : f,
+      ),
+    );
+  }
+
+  // ---- File open / switch ----------------------------------------------------
+
+  // Open a validated upload as its OWN new tab, and focus it. Each file starts
+  // with empty sessions — its work is independent of every other open file.
+  function openFileInNewTab(file: FileReadOk) {
+    const opened: OpenFile = {
+      fileId: nextFileId(),
+      filename: file.filename,
+      language: file.language,
+      code: file.code,
+      sessions: {},
+    };
+    setFiles((prev) => [...prev, opened]);
+    setActiveFileId(opened.fileId);
+    setStatus("idle");
+    setErrorMsg("");
+    setDetected(null);
+  }
+
+  // Replace the active file's contents in place (used when the untouched pasted
+  // scratch tab is still empty of work — no point spawning a second blank tab).
+  function replaceActiveFile(file: FileReadOk) {
+    patchActiveFile({
+      filename: file.filename,
+      language: file.language,
+      code: file.code,
+      sessions: {},
+    });
+    setStatus("idle");
+    setErrorMsg("");
+    setDetected(null);
+  }
+
   function handleValidFile(file: FileReadOk) {
     setErrorMsg("");
 
-    // Same filename → just reload it, no session-clobber prompt needed.
-    if (file.filename === filename) {
-      loadFile(file);
+    // If the current tab is the pristine pasted scratch (no work done, still the
+    // starter), just load into it rather than opening a redundant blank tab.
+    const isPristineScratch =
+      activeFile.filename === "pasted code" && !fileHasWork(activeFile);
+
+    if (isPristineScratch) {
+      replaceActiveFile(file);
       return;
     }
 
-    // A different file, but no active session → load directly.
-    if (!inSession) {
-      loadFile(file);
-      return;
-    }
-
-    // Different file mid-session → ask before clearing progress (§6.5, step 3).
-    setPendingFile(file);
+    // Otherwise open it as a brand-new tab so existing work is never disturbed.
+    openFileInNewTab(file);
   }
 
   function handleFileError(message: string) {
-    // A bad file is rejected WITHOUT touching the current session (§6.5).
+    // A bad file is rejected WITHOUT touching any open file.
     setErrorMsg(message);
   }
+
+  // Switch which open file is active. Everything about the other files is kept.
+  function handleSwitchFile(fileId: string) {
+    if (fileId === activeFileId) return;
+    setActiveFileId(fileId);
+    setErrorMsg("");
+    setDetected(null);
+    // Show the newly-active file at whatever state its CURRENT review type is in.
+    const target = files.find((f) => f.fileId === fileId);
+    const s = target ? sessionFor(target.sessions, reviewType) : emptySession();
+    setStatus(s.revision > 0 ? "working" : "idle");
+  }
+
+  // Close an open file. If it was active, fall back to a neighbour; never allow
+  // zero tabs — closing the last one leaves a fresh scratch file.
+  function handleCloseFile(fileId: string) {
+    const remaining = files.filter((f) => f.fileId !== fileId);
+
+    if (remaining.length === 0) {
+      const fresh = starterFile();
+      setFiles([fresh]);
+      setActiveFileId(fresh.fileId);
+      setStatus("idle");
+      setErrorMsg("");
+      setDetected(null);
+      return;
+    }
+
+    setFiles(remaining);
+
+    // Only need to move focus if we closed the file currently being viewed.
+    if (fileId === activeFileId) {
+      const fallback = remaining[remaining.length - 1];
+      setActiveFileId(fallback.fileId);
+      setErrorMsg("");
+      setDetected(null);
+      const s = sessionFor(fallback.sessions, reviewType);
+      setStatus(s.revision > 0 ? "working" : "idle");
+    }
+  }
+
+  // ---- Analyze + work-log actions -------------------------------------------
 
   async function runAnalyze() {
     setStatus("analyzing");
     setErrorMsg("");
     try {
-      // For a real uploaded file we send its actual name (drives extension
-      // routing server-side); for pasted code we send a synthetic name whose
-      // extension matches the chosen flavor (e.g. input.tsx for TSX).
       const sentName =
-        filename === "pasted code" ? `input${pastedExt(language)}` : filename;
+        activeFile.filename === "pasted code"
+          ? `input${pastedExt(activeFile.language as EditorLanguage)}`
+          : activeFile.filename;
 
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, filename: sentName, reviewType }),
+        body: JSON.stringify({
+          code: activeFile.code,
+          filename: sentName,
+          reviewType,
+        }),
       });
       const data = (await res.json()) as AnalyzeResponse;
 
@@ -148,7 +249,7 @@ export default function Home() {
         return;
       }
 
-      setSessions((prev) => ({
+      patchActiveSessions((prev) => ({
         ...prev,
         [reviewType]: foldAnalysis(
           sessionFor(prev, reviewType),
@@ -164,34 +265,35 @@ export default function Home() {
     }
   }
 
-  // Switching the review type swaps to that type's own work-log. Each type
-  // keeps its issues independently, so we never touch the other slots. We just
-  // point `status` at whatever the target type already has: if it was analyzed
-  // before, show its results; otherwise it's idle, ready for a first Analyze.
+  // Switching the review type swaps to that type's own work-log within the
+  // active file. Each type keeps its issues independently.
   function handleReviewTypeChange(id: string) {
     if (id === reviewType) return;
     setReviewType(id);
     setErrorMsg("");
     setDetected(null);
-    const target = sessionFor(sessions, id);
+    const target = sessionFor(activeFile.sessions, id);
     setStatus(target.revision > 0 ? "working" : "idle");
   }
 
   function handleGotIt(id: string) {
-    setSessions((prev) => ({
+    patchActiveSessions((prev) => ({
       ...prev,
       [reviewType]: markGotIt(sessionFor(prev, reviewType), id),
     }));
+  }
+
+  function handleEditorChange(value: string | undefined) {
+    patchActiveFile({ code: value ?? "" });
   }
 
   function handleFinish() {
     setStatus("finished");
   }
 
-  // "Keep going" from the completion summary resets ONLY the active review
-  // type's work-log — other types keep their progress.
+  // "Keep going" resets ONLY the active file's active review type.
   function handleReset() {
-    setSessions((prev) => ({ ...prev, [reviewType]: emptySession() }));
+    patchActiveSessions((prev) => ({ ...prev, [reviewType]: emptySession() }));
     setStatus("idle");
   }
 
@@ -215,6 +317,41 @@ export default function Home() {
         </span>
       </header>
 
+      {/* File tabs — one per open file, each with its own independent work. */}
+      {files.length > 1 && (
+        <nav className="file-tabs" aria-label="Open files">
+          <ul className="file-tabs__list">
+            {files.map((f) => {
+              const open = openIssueCount(f);
+              return (
+                <li key={f.fileId} className="file-tab__wrap">
+                  <button
+                    className={`file-tab ${
+                      f.fileId === activeFileId ? "file-tab--active" : ""
+                    }`}
+                    onClick={() => handleSwitchFile(f.fileId)}
+                    aria-current={f.fileId === activeFileId ? "true" : undefined}
+                  >
+                    <span className="file-tab__name">{f.filename}</span>
+                    {open > 0 && (
+                      <span className="file-tab__badge">{open}</span>
+                    )}
+                  </button>
+                  <button
+                    className="file-tab__close"
+                    onClick={() => handleCloseFile(f.fileId)}
+                    aria-label={`Close ${f.filename}`}
+                    title={`Close ${f.filename}`}
+                  >
+                    ×
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      )}
+
       {status === "finished" ? (
         <CompletionSummary summary={summarize(session)} onKeepGoing={handleReset} />
       ) : (
@@ -223,7 +360,11 @@ export default function Home() {
             <FileDrop onFile={handleValidFile} onError={handleFileError} />
 
             <p className="panel-label">
-              <span>{filename === "pasted code" ? "Your code" : filename}</span>
+              <span>
+                {activeFile.filename === "pasted code"
+                  ? "Your code"
+                  : activeFile.filename}
+              </span>
               {inSession && (
                 <span className="rev-badge">revision {session.revision}</span>
               )}
@@ -231,9 +372,10 @@ export default function Home() {
             <div className="editor-frame">
               <Editor
                 height="380px"
-                language={monacoMode(language)}
-                value={code}
-                onChange={(value) => setCode(value ?? "")}
+                language={monacoMode(activeFile.language as EditorLanguage)}
+                path={activeFile.fileId}
+                value={activeFile.code}
+                onChange={handleEditorChange}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
@@ -253,18 +395,28 @@ export default function Home() {
                   <span>What kind of review?</span>
                 </p>
                 <div className="review-options">
-                  {reviewTypes.map((rt) => (
-                    <button
-                      key={rt.id}
-                      className={`review-option ${
-                        rt.id === reviewType ? "review-option--active" : ""
-                      }`}
-                      onClick={() => handleReviewTypeChange(rt.id)}
-                      aria-pressed={rt.id === reviewType}
-                    >
-                      {rt.label}
-                    </button>
-                  ))}
+                  {reviewTypes.map((rt) => {
+                    const hasWork =
+                      sessionFor(activeFile.sessions, rt.id).revision > 0;
+                    return (
+                      <button
+                        key={rt.id}
+                        className={`review-option ${
+                          rt.id === reviewType ? "review-option--active" : ""
+                        }`}
+                        onClick={() => handleReviewTypeChange(rt.id)}
+                        aria-pressed={rt.id === reviewType}
+                      >
+                        {rt.label}
+                        {hasWork && (
+                          <span
+                            className="review-option__dot"
+                            aria-label="has active session"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
                 {activeBlurb && <p className="review-blurb">{activeBlurb}</p>}
                 {detected && DETECTED_LABELS[detected] && (
@@ -298,7 +450,7 @@ export default function Home() {
               <span className="toolbar__hint">
                 {inSession
                   ? "Fix an issue in the editor, then re-analyze."
-                  : "One file at a time. Edit and re-analyze as you go."}
+                  : "Drop another file to open it in its own tab."}
               </span>
             </div>
           </section>
@@ -324,15 +476,6 @@ export default function Home() {
             </>
           )}
         </>
-      )}
-
-      {pendingFile && (
-        <ConfirmSwitch
-          currentName={filename}
-          nextName={pendingFile.filename}
-          onCancel={() => setPendingFile(null)}
-          onConfirm={() => loadFile(pendingFile)}
-        />
       )}
 
       <footer className="footer">

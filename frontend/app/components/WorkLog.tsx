@@ -59,6 +59,21 @@ export function WorkLog({
                 </span>
               </div>
 
+              {c.line > 0 && (
+                <p className="card__loc">
+                  <span className="card__loc-label">location</span>
+                  line {c.line}
+                  {c.column > 0 ? `, column ${c.column}` : ""}
+                </p>
+              )}
+
+              {c.detail && (
+                <p className="card__detail">
+                  <span className="card__detail-label">analyzer</span>
+                  {c.detail}
+                </p>
+              )}
+
               <p className="card__why">{c.why}</p>
 
               <div className="card__meta">
@@ -85,20 +100,28 @@ export function WorkLog({
                 </p>
               )}
 
-              {issue.goneFromAnalysis && issue.status !== "got-it" && (
-                <p className="card__fixed-note">
-                  You fixed this — it&rsquo;s no longer flagged. Nice.
-                </p>
-              )}
+              {issue.goneFromAnalysis &&
+                issue.status !== "got-it" &&
+                issue.status !== "resolved" && (
+                  <div className="card__fixed-row">
+                    <p className="card__fixed-note">
+                      You fixed this — it&rsquo;s no longer flagged. Nice.
+                    </p>
+                    <button
+                      className="btn-gotit btn-gotit--small"
+                      onClick={() => onGotIt(issue.id)}
+                    >
+                      Got it
+                    </button>
+                  </div>
+                )}
 
-              {issue.status === "open" && !issue.goneFromAnalysis && (
-                <button
-                  className="btn-gotit"
-                  onClick={() => onGotIt(issue.id)}
-                >
-                  I understand this — got it
-                </button>
-              )}
+              {issue.goneFromAnalysis &&
+                (issue.status === "got-it" || issue.status === "resolved") && (
+                  <p className="card__fixed-note">
+                    Fixed and understood. ✓
+                  </p>
+                )}
             </li>
           );
         })}

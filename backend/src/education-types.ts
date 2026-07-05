@@ -28,4 +28,7 @@ export interface EducationalCard extends EducationContent {
   ruleId: string | null; // original ESLint rule, for reference
   line: number;
   column: number;
+  detail: string; // the raw analyzer message for THIS finding (instance-specific,
+  // e.g. "'foo' is defined but never used") — distinguishes
+  // repeated findings of the same rule from one another
 }

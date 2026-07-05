@@ -258,10 +258,123 @@ body {
   border-color: var(--ink);
 }
 
+/* Amber marker on a review type that already has an active session */
+.review-option {
+  position: relative;
+}
+
+.review-option__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 0.45rem;
+  border-radius: 50%;
+  background: var(--highlighter);
+  vertical-align: middle;
+}
+
+.review-option--active .review-option__dot {
+  background: var(--highlighter);
+}
+
 .review-blurb {
   margin: 0.7rem 0 0;
   font-size: 0.86rem;
   color: var(--ink-faint);
+}
+
+/* ---- File tabs (one open file per tab, each fully independent) ---- */
+
+.file-tabs {
+  margin-top: 1.5rem;
+}
+
+.file-tabs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.file-tab__wrap {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.file-tab__wrap:has(.file-tab--active) {
+  background: var(--paper-raised);
+  border-color: var(--ink);
+  border-bottom-color: var(--paper-raised);
+}
+
+.file-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.4rem 0.5rem 0.8rem;
+  cursor: pointer;
+  max-width: 15rem;
+}
+
+.file-tab--active {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.file-tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tab__badge {
+  flex: none;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--highlighter);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-tab__close {
+  font-family: var(--font-prose);
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ink-faint);
+  background: transparent;
+  border: none;
+  padding: 0 0.55rem;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.file-tab__close:hover {
+  color: var(--error);
+  background: var(--error-wash);
+}
+
+.file-tab__close:focus-visible,
+.file-tab:focus-visible {
+  outline: 3px solid var(--highlighter);
+  outline-offset: -3px;
 }
 
 /* ---- Findings (educational cards) ---- */
@@ -327,13 +440,6 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   flex: 1 1 auto;
-}
-
-.card__loc {
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  color: var(--ink-faint);
-  white-space: nowrap;
 }
 
 .sev {
@@ -407,6 +513,44 @@ body {
   text-transform: uppercase;
   color: #a07c0a;
   margin-bottom: 0.3rem;
+}
+
+/* Per-finding location + raw analyzer message (distinguishes duplicates) */
+
+.card__loc {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.card__loc-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-right: 0.5rem;
+}
+
+.card__detail {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.75rem;
+  background: var(--paper);
+  border-left: 2px solid var(--rule);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.card__detail-label {
+  display: block;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 0.25rem;
 }
 
 /* ---- States ---- */
@@ -599,6 +743,26 @@ body {
   outline-offset: 2px;
 }
 
+/* Fixed note + inline acknowledgement button sit on one row */
+
+.card__fixed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.card__fixed-row .card__fixed-note {
+  margin-top: 0.9rem;
+}
+
+.btn-gotit--small {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.7rem;
+}
+
 /* Completion summary */
 
 .summary {
@@ -728,72 +892,6 @@ body {
 .filedrop__btn:focus-visible {
   outline: 3px solid var(--highlighter);
   outline-offset: 3px;
-}
-
-/* Confirm-switch modal */
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(28, 32, 51, 0.42);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  z-index: 50;
-}
-
-.modal {
-  background: var(--paper-raised);
-  border-radius: 6px;
-  border: 1px solid var(--rule);
-  max-width: 460px;
-  width: 100%;
-  padding: 1.75rem 1.75rem 1.5rem;
-  box-shadow: 0 12px 40px rgba(28, 32, 51, 0.25);
-}
-
-.modal__title {
-  margin: 0 0 0.75rem;
-  font-size: 1.25rem;
-  letter-spacing: -0.01em;
-}
-
-.modal__body {
-  margin: 0 0 1.5rem;
-  color: var(--ink-soft);
-  font-size: 0.96rem;
-  line-height: 1.55;
-}
-
-.modal__actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.btn-ghost {
-  font-family: var(--font-prose);
-  font-size: 0.92rem;
-  font-weight: 500;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: 0.6rem 1rem;
-  cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
-}
-
-.btn-ghost:hover {
-  border-color: var(--ink-faint);
-  color: var(--ink);
-}
-
-.btn-ghost:focus-visible {
-  outline: 3px solid var(--highlighter);
-  outline-offset: 2px;
 }
 
 /* ---- Accessibility floor ---- */

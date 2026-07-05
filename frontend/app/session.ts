@@ -60,6 +60,39 @@ export function sessionFor(
 }
 
 /**
+ * One open file in the workspace. Each file carries its own code, editor
+ * language, and its OWN per-review-type sessions — so work on file A is fully
+ * independent of file B, and switching between them preserves everything. All
+ * in-memory only; nothing is stored server-side (privacy, §7.9).
+ */
+export interface OpenFile {
+  /** Stable local id for this open file (not the filename — names can repeat). */
+  fileId: string;
+  /** Display name ("pasted code" for pasted snippets, else the upload's name). */
+  filename: string;
+  /** The editor flavor string ("tsx", "vue", …) — kept loose to avoid a cycle. */
+  language: string;
+  /** Current editor contents for this file. */
+  code: string;
+  /** This file's per-review-type work-logs. */
+  sessions: SessionsByType;
+}
+
+/** Total open issues across every review type of one file (for the file tab badge). */
+export function openIssueCount(file: OpenFile): number {
+  let open = 0;
+  for (const s of Object.values(file.sessions)) {
+    open += progressOf(s).openCount;
+  }
+  return open;
+}
+
+/** True if any review type of this file has been analyzed at least once. */
+export function fileHasWork(file: OpenFile): boolean {
+  return Object.values(file.sessions).some((s) => s.revision > 0);
+}
+
+/**
  * Fold a fresh analysis (list of cards) into the work-log, producing the next
  * session state. Pure: same inputs → same output.
  *
