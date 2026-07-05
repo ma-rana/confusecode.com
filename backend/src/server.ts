@@ -5,11 +5,18 @@ import { CONFIG } from "./config.js";
 import { validateSubmission, type SubmissionInput } from "./validate.js";
 import { routeByExtension } from "./router.js";
 import { analyze } from "./analyze.js";
+import { educate } from "./educate.js";
 import { ConcurrencyGate } from "./semaphore.js";
+import {
+  REVIEW_MENU,
+  DEFAULT_REVIEW_TYPE,
+  isReviewType,
+  rulesForReview,
+} from "./review-presets.js";
 
 /**
  * The backend pipeline (§4.2):
- *   validate → rate-limit → route → analyze (worker+timeout) → JSON
+ *   validate → rate-limit → route → analyze (worker+timeout) → educate → JSON
  *
  * Stateless. Stores nothing. Never logs submitted code (§7.9).
  * Binds localhost only — only Caddy is public (§4.5).
@@ -39,6 +46,12 @@ await app.register(rateLimit, {
 
 app.get("/health", async () => ({ status: "ok" }));
 
+// The review-type menu (§6.1). The frontend renders these as buttons.
+app.get("/api/review-types", async () => ({
+  reviewTypes: REVIEW_MENU,
+  default: DEFAULT_REVIEW_TYPE,
+}));
+
 app.post("/api/analyze", async (req, reply) => {
   // Concurrency cap — shed load cleanly rather than spawning unbounded workers.
   if (!gate.tryAcquire()) {
@@ -50,24 +63,40 @@ app.post("/api/analyze", async (req, reply) => {
 
   try {
     // Validate every input, every time (§7.2). Fail closed.
-    const result = validateSubmission(req.body as SubmissionInput);
+    const body = (req.body ?? {}) as SubmissionInput & { reviewType?: unknown };
+    const result = validateSubmission(body);
     if (!result.ok) {
       return reply.code(400).send({ error: result.error });
     }
 
+    // Resolve the review type. Unknown/absent → default preset (fail safe).
+    const reviewType = isReviewType(body.reviewType)
+      ? body.reviewType
+      : DEFAULT_REVIEW_TYPE;
+
     // Route to an analyzer. v1 has exactly one: JS/TS → ESLint.
     const analyzer = routeByExtension(result.ext);
     if (analyzer !== "eslint") {
-      // Phase 3: log as demand data. For now, reject.
+      // Anonymous demand data: which unsupported languages people try (§Phase 3).
+      // Logs the extension only — never the code.
+      req.log.info(
+        { event: "unsupported_language", ext: result.ext },
+        "attempted unsupported language",
+      );
       return reply.code(400).send({ error: "Unsupported language." });
     }
 
-    const findings = await analyze(result.code);
+    const findings = await analyze(result.code, rulesForReview(reviewType));
+    // Translate raw findings into educational cards (§6.2) — the teaching layer.
+    const cards = educate(findings);
     // Code is discarded here — nothing is retained (§4.4).
-    return reply.send({ findings });
+    return reply.send({ cards, reviewType });
   } catch (err) {
     // Generic outward message; detail stays in server logs only (§7.10).
-    req.log.error({ err: err instanceof Error ? err.message : "unknown" }, "analysis failed");
+    req.log.error(
+      { err: err instanceof Error ? err.message : "unknown" },
+      "analysis failed",
+    );
     return reply.code(500).send({ error: "Analysis failed. Please try again." });
   } finally {
     gate.release();
@@ -76,7 +105,9 @@ app.post("/api/analyze", async (req, reply) => {
 
 try {
   await app.listen({ port: CONFIG.PORT, host: CONFIG.HOST });
-  app.log.info(`ConfuseCode backend listening on http://${CONFIG.HOST}:${CONFIG.PORT}`);
+  app.log.info(
+    `ConfuseCode backend listening on http://${CONFIG.HOST}:${CONFIG.PORT}`,
+  );
 } catch (err) {
   app.log.error(err);
   process.exit(1);

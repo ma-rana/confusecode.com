@@ -1,18 +1,34 @@
 /**
- * The shape of a raw finding returned by the backend.
- * Phase 1 is raw ESLint output. Phase 2 will wrap each of these in an
- * educational card (title, why-it-matters, concept, difficulty, investigate).
+ * Educational card returned by the backend (Phase 2, §6.2).
+ * Each card is a teaching moment built from a raw ESLint finding — it explains
+ * why something matters and nudges investigation, but never contains a fix.
  */
-export interface Finding {
+export type Severity = "info" | "low" | "medium" | "high";
+export type Difficulty = "beginner" | "intermediate" | "advanced";
+
+export interface Card {
+  id: string;
   ruleId: string | null;
-  message: string;
   line: number;
   column: number;
-  severity: number; // 1 = warning, 2 = error
+  title: string;
+  severity: Severity;
+  why: string;
+  concept: string;
+  difficulty: Difficulty;
+  investigate: string;
+}
+
+/** A review type in the menu (Phase 3, §6.1). */
+export interface ReviewTypeOption {
+  id: string;
+  label: string;
+  blurb: string;
 }
 
 export interface AnalyzeSuccess {
-  findings: Finding[];
+  cards: Card[];
+  reviewType: string;
 }
 
 export interface AnalyzeError {
@@ -20,3 +36,8 @@ export interface AnalyzeError {
 }
 
 export type AnalyzeResponse = AnalyzeSuccess | AnalyzeError;
+
+export interface ReviewTypesResponse {
+  reviewTypes: ReviewTypeOption[];
+  default: string;
+}

@@ -1,9 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Editor from "@monaco-editor/react";
-import { Findings } from "./components/Findings";
-import type { AnalyzeResponse, Finding } from "./types";
+import { WorkLog } from "./components/WorkLog";
+import { ProgressBar } from "./components/ProgressBar";
+import { CompletionSummary } from "./components/CompletionSummary";
+import {
+  emptySession,
+  foldAnalysis,
+  markGotIt,
+  progressOf,
+  summarize,
+  type SessionState,
+} from "./session";
+import type {
+  AnalyzeResponse,
+  ReviewTypeOption,
+  ReviewTypesResponse,
+} from "./types";
 
 const STARTER = `// Paste your JavaScript or TypeScript here.
 // ConfuseCode finds issues and explains why they matter —
@@ -19,16 +33,28 @@ function total(items) {
 }
 `;
 
-type Status = "idle" | "analyzing" | "done" | "error";
+type Status = "idle" | "analyzing" | "working" | "finished" | "error";
 
 export default function Home() {
   const [code, setCode] = useState<string>(STARTER);
   const [language, setLanguage] = useState<"typescript" | "javascript">(
     "typescript",
   );
-  const [findings, setFindings] = useState<Finding[]>([]);
+  const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
+  const [reviewType, setReviewType] = useState<string>("errors");
+  const [session, setSession] = useState<SessionState>(emptySession());
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/review-types")
+      .then((r) => r.json() as Promise<ReviewTypesResponse>)
+      .then((d) => {
+        setReviewTypes(d.reviewTypes);
+        setReviewType(d.default);
+      })
+      .catch(() => {});
+  }, []);
 
   async function runAnalyze() {
     setStatus("analyzing");
@@ -40,6 +66,7 @@ export default function Home() {
         body: JSON.stringify({
           code,
           filename: language === "typescript" ? "input.ts" : "input.js",
+          reviewType,
         }),
       });
       const data = (await res.json()) as AnalyzeResponse;
@@ -48,18 +75,36 @@ export default function Home() {
         setErrorMsg(
           "error" in data ? data.error : "Something went wrong. Try again.",
         );
-        setFindings([]);
         setStatus("error");
         return;
       }
 
-      setFindings(data.findings);
-      setStatus("done");
+      // Fold this analysis into the running work-log (§6.4).
+      setSession((prev) => foldAnalysis(prev, data.cards));
+      setStatus("working");
     } catch {
       setErrorMsg("Could not reach the analyzer. Check your connection.");
       setStatus("error");
     }
   }
+
+  function handleGotIt(id: string) {
+    setSession((prev) => markGotIt(prev, id));
+  }
+
+  function handleFinish() {
+    setStatus("finished");
+  }
+
+  function handleReset() {
+    // Explicit, non-destructive-by-accident: starting fresh clears the log.
+    setSession(emptySession());
+    setStatus("idle");
+  }
+
+  const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
+  const progress = progressOf(session);
+  const inSession = session.revision > 0;
 
   return (
     <main className="page">
@@ -78,73 +123,122 @@ export default function Home() {
         </span>
       </header>
 
-      <section className="workbench">
-        <p className="panel-label">
-          <span>Your code</span>
-        </p>
-        <div className="editor-frame">
-          <Editor
-            height="380px"
-            language={language}
-            value={code}
-            onChange={(value) => setCode(value ?? "")}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              fontFamily:
-                '"SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace',
-              scrollBeyondLastLine: false,
-              padding: { top: 14, bottom: 14 },
-              renderLineHighlight: "line",
-              tabSize: 2,
-            }}
-          />
-        </div>
+      {status === "finished" ? (
+        <CompletionSummary summary={summarize(session)} onKeepGoing={handleReset} />
+      ) : (
+        <>
+          <section className="workbench">
+            <p className="panel-label">
+              <span>Your code</span>
+              {inSession && (
+                <span className="rev-badge">revision {session.revision}</span>
+              )}
+            </p>
+            <div className="editor-frame">
+              <Editor
+                height="380px"
+                language={language}
+                value={code}
+                onChange={(value) => setCode(value ?? "")}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  fontFamily:
+                    '"SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace',
+                  scrollBeyondLastLine: false,
+                  padding: { top: 14, bottom: 14 },
+                  renderLineHighlight: "line",
+                  tabSize: 2,
+                }}
+              />
+            </div>
 
-        <div className="toolbar">
-          <button
-            className="btn-analyze"
-            onClick={runAnalyze}
-            disabled={status === "analyzing"}
-          >
-            {status === "analyzing" ? "Analyzing…" : "Analyze"}
-          </button>
+            {reviewTypes.length > 0 && (
+              <div className="review-picker" role="group" aria-label="Review type">
+                <p className="panel-label">
+                  <span>What kind of review?</span>
+                </p>
+                <div className="review-options">
+                  {reviewTypes.map((rt) => (
+                    <button
+                      key={rt.id}
+                      className={`review-option ${
+                        rt.id === reviewType ? "review-option--active" : ""
+                      }`}
+                      onClick={() => setReviewType(rt.id)}
+                      aria-pressed={rt.id === reviewType}
+                    >
+                      {rt.label}
+                    </button>
+                  ))}
+                </div>
+                {activeBlurb && <p className="review-blurb">{activeBlurb}</p>}
+              </div>
+            )}
 
-          <label className="lang-select-wrap">
-            <select
-              className="lang-select"
-              value={language}
-              onChange={(e) =>
-                setLanguage(e.target.value as "typescript" | "javascript")
-              }
-              aria-label="Language"
-            >
-              <option value="typescript">TypeScript</option>
-              <option value="javascript">JavaScript</option>
-            </select>
-          </label>
+            <div className="toolbar">
+              <button
+                className="btn-analyze"
+                onClick={runAnalyze}
+                disabled={status === "analyzing"}
+              >
+                {status === "analyzing"
+                  ? "Analyzing…"
+                  : inSession
+                    ? "Re-analyze"
+                    : "Analyze"}
+              </button>
 
-          <span className="toolbar__hint">
-            One file at a time. Edit and re-analyze as you go.
-          </span>
-        </div>
-      </section>
+              {inSession && (
+                <button className="btn-finish" onClick={handleFinish}>
+                  Finish now
+                </button>
+              )}
 
-      {status === "error" && (
-        <div className="notice notice--error" role="alert">
-          {errorMsg}
-        </div>
+              <label className="lang-select-wrap">
+                <select
+                  className="lang-select"
+                  value={language}
+                  onChange={(e) =>
+                    setLanguage(e.target.value as "typescript" | "javascript")
+                  }
+                  aria-label="Language"
+                >
+                  <option value="typescript">TypeScript</option>
+                  <option value="javascript">JavaScript</option>
+                </select>
+              </label>
+
+              <span className="toolbar__hint">
+                {inSession
+                  ? "Fix an issue in the editor, then re-analyze."
+                  : "One file at a time. Edit and re-analyze as you go."}
+              </span>
+            </div>
+          </section>
+
+          {status === "error" && (
+            <div className="notice notice--error" role="alert">
+              {errorMsg}
+            </div>
+          )}
+
+          {status === "idle" && (
+            <div className="empty-state">
+              <strong>Nothing analyzed yet.</strong>
+              Write or paste some JavaScript or TypeScript above, pick what kind
+              of review you want, then press Analyze.
+            </div>
+          )}
+
+          {inSession && status !== "analyzing" && (
+            <>
+              {progress.total > 0 && <ProgressBar progress={progress} />}
+              <WorkLog issues={session.issues} onGotIt={handleGotIt} />
+            </>
+          )}
+        </>
       )}
-
-      {status === "idle" && (
-        <div className="empty-state">
-          <strong>Nothing analyzed yet.</strong>
-          Write or paste some JavaScript or TypeScript above, then press Analyze
-          to see what a careful reviewer would flag.
-        </div>
-      )}
-
-      {status === "done" && <Findings findings={findings} />}
 
       <footer className="footer">
         ConfuseCode · a learning-focused reviewer. Findings come from static

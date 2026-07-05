@@ -14,7 +14,15 @@ import tsParser from "@typescript-eslint/parser";
  * (ReDoS, pathological nesting). Running here in a worker means a hung parse
  * is killed by the parent's wall-clock timeout and can't pin the event loop
  * or crash the server.
+ *
+ * Design note: this worker imports NOTHING project-local (only eslint + parser,
+ * which are real node_modules). The rule set is passed in via workerData rather
+ * than imported here, so the worker resolves cleanly in both dev (tsx running
+ * .ts) and production (compiled .js) without depending on a loader propagating
+ * into the worker thread.
  */
+
+import type { Linter as LinterNS } from "eslint";
 
 export interface RawFinding {
   ruleId: string | null;
@@ -26,14 +34,16 @@ export interface RawFinding {
 
 interface WorkerInput {
   code: string;
+  rules: LinterNS.RulesRecord;
 }
 
-const { code } = workerData as WorkerInput;
+const { code, rules } = workerData as WorkerInput;
 
 const linter = new Linter();
 
-// Phase 1: a small, correctness-focused starter set. Raw findings only —
-// the educational card layer is Phase 2, the review-type presets are Phase 3.
+// Phase 3: the rule set is chosen by the review type the user picked (§6.1) and
+// passed in from the parent. The curated presets ARE the intelligence — no
+// model, just measured rules.
 const messages = linter.verify(code, {
   languageOptions: {
     ecmaVersion: 2022,
@@ -41,7 +51,6 @@ const messages = linter.verify(code, {
     // typescript-eslint parser handles both JS and TS syntax.
     parser: tsParser,
     // Standard globals so common runtime names aren't false-flagged by no-undef.
-    // Kept deliberately small; a Phase 3 review-type could tune this per preset.
     globals: {
       console: "readonly",
       process: "readonly",
@@ -59,16 +68,7 @@ const messages = linter.verify(code, {
       Array: "readonly",
     },
   },
-  rules: {
-    "no-undef": "error",
-    "no-unused-vars": "warn",
-    "no-unreachable": "error",
-    "no-constant-condition": "warn",
-    "no-dupe-keys": "error",
-    "no-dupe-args": "error",
-    "no-cond-assign": "warn",
-    "use-isnan": "error",
-  },
+  rules,
 });
 
 const findings: RawFinding[] = messages.map((m) => ({
