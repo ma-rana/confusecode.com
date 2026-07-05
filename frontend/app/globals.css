@@ -1,0 +1,378 @@
+/*
+  ConfuseCode — visual identity
+  --------------------------------
+  Subject: a mentor / code reviewer that teaches instead of solving.
+  Audience: the disciplined learner — "past-you", stuck and wanting to understand.
+  The page's job: make finding your own bugs feel like a guided study session,
+  not a linter dashboard.
+
+  Direction: an ink-on-paper study desk. Deep indigo "ink", warm paper ground,
+  a single amber highlighter as the accent (the thing a student reaches for when
+  something matters). Monospace for anything code-shaped; a humanist sans for
+  prose so the teaching voice reads like a person, not a compiler.
+  Deliberately NOT the cream + terracotta default.
+*/
+
+:root {
+  --paper: #f6f4ef; /* warm paper ground */
+  --paper-raised: #fffdf8; /* cards lift slightly off the desk */
+  --ink: #1c2033; /* deep indigo ink — primary text */
+  --ink-soft: #4a4f66; /* secondary text */
+  --ink-faint: #8b8fa3; /* captions, metadata */
+  --rule: #e3ded3; /* hairline dividers */
+  --highlighter: #f2b705; /* amber — the accent, used sparingly */
+  --highlighter-wash: #fdf3d3; /* amber at low strength for fills */
+  --error: #b23a3a; /* muted brick — errors (severity 2) */
+  --error-wash: #f6e4e1;
+  --warn: #9a6b1e; /* ochre — warnings (severity 1) */
+  --warn-wash: #f6ecd6;
+
+  --font-prose: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", "Fira Code", Menlo,
+    Consolas, monospace;
+
+  --measure: 68ch;
+  --radius: 4px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--paper);
+  /* faint ruled-paper texture: horizontal hairlines like a notebook */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 31px,
+    rgba(28, 32, 51, 0.035) 32px
+  );
+  background-size: 100% 32px;
+  color: var(--ink);
+  font-family: var(--font-prose);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Layout scaffold ---- */
+
+.page {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+}
+
+.masthead {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.masthead__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 0.5rem;
+}
+
+.masthead__title {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0;
+  font-weight: 700;
+}
+
+.masthead__title mark {
+  background: linear-gradient(
+    to top,
+    var(--highlighter-wash) 0 42%,
+    transparent 42% 100%
+  );
+  color: inherit;
+  padding: 0 0.05em;
+}
+
+.masthead__creed {
+  margin: 0.9rem 0 0;
+  max-width: var(--measure);
+  color: var(--ink-soft);
+  font-size: 1.02rem;
+}
+
+/* ---- Privacy line ---- */
+
+.privacy-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  margin-top: 0.75rem;
+}
+
+.privacy-note::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4a8f5f; /* quiet green — the promise is kept by design */
+  flex: none;
+}
+
+/* ---- Editor panel ---- */
+
+.workbench {
+  margin-top: 2.25rem;
+}
+
+.panel-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 0.6rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.editor-frame {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper-raised);
+  box-shadow: 0 1px 0 rgba(28, 32, 51, 0.04);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.btn-analyze {
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--paper-raised);
+  background: var(--ink);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.7rem 1.4rem;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.btn-analyze:hover:not(:disabled) {
+  background: #262b45;
+}
+
+.btn-analyze:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-analyze:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-analyze:focus-visible {
+  outline: 3px solid var(--highlighter);
+  outline-offset: 2px;
+}
+
+.lang-select {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+}
+
+.lang-select:focus-visible {
+  outline: 3px solid var(--highlighter);
+  outline-offset: 1px;
+}
+
+.toolbar__hint {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+/* ---- Findings ---- */
+
+.findings {
+  margin-top: 2.5rem;
+}
+
+.findings__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.findings__count {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.findings__sub {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.finding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.finding {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+}
+
+.finding--error {
+  border-left-color: var(--error);
+}
+
+.finding--warn {
+  border-left-color: var(--warn);
+}
+
+.finding__loc {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.finding__msg {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.98rem;
+}
+
+.finding__rule {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.severity-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.4rem;
+  border-radius: 2px;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+.severity-tag--error {
+  background: var(--error-wash);
+  color: var(--error);
+}
+
+.severity-tag--warn {
+  background: var(--warn-wash);
+  color: var(--warn);
+}
+
+/* ---- States ---- */
+
+.notice {
+  border-radius: var(--radius);
+  padding: 0.85rem 1.1rem;
+  font-size: 0.95rem;
+  margin-top: 1.5rem;
+}
+
+.notice--error {
+  background: var(--error-wash);
+  color: var(--error);
+  border: 1px solid #e4c4bd;
+}
+
+.empty-state {
+  margin-top: 2.5rem;
+  padding: 2rem 1.5rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.empty-state strong {
+  color: var(--ink);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.all-clear {
+  margin-top: 2.5rem;
+  padding: 2rem 1.5rem;
+  border: 1px solid #cfe3d5;
+  background: #eef6f0;
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.all-clear strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.footer {
+  margin-top: 4rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+/* ---- Accessibility floor ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
