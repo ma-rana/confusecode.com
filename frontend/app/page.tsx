@@ -15,7 +15,8 @@ import {
   summarize,
   type SessionState,
 } from "./session";
-import type { FileReadOk } from "./file-upload";
+import type { FileReadOk, EditorLanguage } from "./file-upload";
+import { monacoMode, pastedExt } from "./file-upload";
 import type {
   AnalyzeResponse,
   ReviewTypeOption,
@@ -38,15 +39,9 @@ function total(items) {
 
 type Status = "idle" | "analyzing" | "working" | "finished" | "error";
 
-// The filename sent to the server when the user is pasting (no real file).
-const PASTED_TS = "input.ts";
-const PASTED_JS = "input.js";
-
 export default function Home() {
   const [code, setCode] = useState<string>(STARTER);
-  const [language, setLanguage] = useState<"typescript" | "javascript">(
-    "typescript",
-  );
+  const [language, setLanguage] = useState<EditorLanguage>("typescript");
   // The current file's display name. For pasted code we use a synthetic name.
   const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
@@ -110,13 +105,10 @@ export default function Home() {
     setErrorMsg("");
     try {
       // For a real uploaded file we send its actual name (drives extension
-      // routing server-side); for pasted code we send a synthetic name.
+      // routing server-side); for pasted code we send a synthetic name whose
+      // extension matches the chosen flavor (e.g. input.tsx for TSX).
       const sentName =
-        filename === "pasted code"
-          ? language === "typescript"
-            ? PASTED_TS
-            : PASTED_JS
-          : filename;
+        filename === "pasted code" ? `input${pastedExt(language)}` : filename;
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -190,7 +182,7 @@ export default function Home() {
             <div className="editor-frame">
               <Editor
                 height="380px"
-                language={language}
+                language={monacoMode(language)}
                 value={code}
                 onChange={(value) => setCode(value ?? "")}
                 options={{
@@ -253,12 +245,14 @@ export default function Home() {
                   className="lang-select"
                   value={language}
                   onChange={(e) =>
-                    setLanguage(e.target.value as "typescript" | "javascript")
+                    setLanguage(e.target.value as EditorLanguage)
                   }
                   aria-label="Language"
                 >
                   <option value="typescript">TypeScript</option>
+                  <option value="tsx">TypeScript + JSX (.tsx)</option>
                   <option value="javascript">JavaScript</option>
+                  <option value="jsx">JavaScript + JSX (.jsx)</option>
                 </select>
               </label>
 

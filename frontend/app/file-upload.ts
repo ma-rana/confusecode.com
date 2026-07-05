@@ -14,13 +14,55 @@
 const ALLOWED_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"];
 const MAX_BYTES = 1_000_000; // ~1 MB
 
+/**
+ * The editor language flavors the app offers. These are JS/TS-family only.
+ * Monaco has just two relevant modes — "typescript" and "javascript" — and each
+ * covers its JSX variant, so the flavor here also carries the extension we send
+ * to the server for pasted code (which drives the analyzer's routing).
+ */
+export type EditorLanguage = "typescript" | "tsx" | "javascript" | "jsx";
+
+/** Monaco editor mode for a given flavor. TSX rides the TS mode; JSX the JS mode. */
+export function monacoMode(lang: EditorLanguage): "typescript" | "javascript" {
+  return lang === "typescript" || lang === "tsx" ? "typescript" : "javascript";
+}
+
+/** Synthetic filename extension for pasted code in each flavor. */
+export function pastedExt(lang: EditorLanguage): ".ts" | ".tsx" | ".js" | ".jsx" {
+  switch (lang) {
+    case "typescript":
+      return ".ts";
+    case "tsx":
+      return ".tsx";
+    case "javascript":
+      return ".js";
+    case "jsx":
+      return ".jsx";
+  }
+}
+
+/** Map an uploaded file's extension to the flavor that best represents it. */
+function languageForExt(ext: string): EditorLanguage {
+  switch (ext) {
+    case ".tsx":
+      return "tsx";
+    case ".jsx":
+      return "jsx";
+    case ".ts":
+      return "typescript";
+    // .js, .mjs, .cjs → plain JavaScript mode.
+    default:
+      return "javascript";
+  }
+}
+
 export interface FileReadOk {
   ok: true;
   filename: string;
   ext: string;
   code: string;
-  /** typescript for .ts/.tsx, else javascript — drives the editor's mode. */
-  language: "typescript" | "javascript";
+  /** Editor flavor derived from the extension — drives the editor's mode. */
+  language: EditorLanguage;
 }
 
 export interface FileReadError {
@@ -74,13 +116,12 @@ export async function readCodeFile(file: File): Promise<FileReadResult> {
     return { ok: false, error: "That looks like a binary file, not text." };
   }
 
-  const isTs = ext === ".ts" || ext === ".tsx";
   return {
     ok: true,
     filename: file.name,
     ext,
     code,
-    language: isTs ? "typescript" : "javascript",
+    language: languageForExt(ext),
   };
 }
 
