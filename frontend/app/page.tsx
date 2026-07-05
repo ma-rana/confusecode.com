@@ -13,7 +13,8 @@ import {
   markGotIt,
   progressOf,
   summarize,
-  type SessionState,
+  sessionFor,
+  type SessionsByType,
 } from "./session";
 import type { FileReadOk, EditorLanguage } from "./file-upload";
 import { monacoMode, pastedExt } from "./file-upload";
@@ -60,7 +61,10 @@ export default function Home() {
   const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
   const [reviewType, setReviewType] = useState<string>("bugs");
-  const [session, setSession] = useState<SessionState>(emptySession());
+  // One independent work-log PER review type. Switching the "What kind of
+  // review?" button shows only that type's session; the others are preserved
+  // untouched, so returning to a type restores exactly its own progress.
+  const [sessions, setSessions] = useState<SessionsByType>({});
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   // What the server auto-detected from the last analysis, for a subtle UI note.
@@ -78,14 +82,17 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // The active work-log = the current review type's slot (empty if never run).
+  const session = sessionFor(sessions, reviewType);
   const inSession = session.revision > 0;
 
   // Load a validated file's contents into the editor, starting fresh (§6.5).
+  // A new file invalidates every review type's progress, so clear ALL slots.
   function loadFile(file: FileReadOk) {
     setCode(file.code);
     setLanguage(file.language);
     setFilename(file.filename);
-    setSession(emptySession());
+    setSessions({});
     setStatus("idle");
     setErrorMsg("");
     setPendingFile(null);
@@ -141,7 +148,14 @@ export default function Home() {
         return;
       }
 
-      setSession((prev) => foldAnalysis(prev, data.cards));
+      setSessions((prev) => ({
+        ...prev,
+        [reviewType]: foldAnalysis(
+          sessionFor(prev, reviewType),
+          data.cards,
+          reviewType,
+        ),
+      }));
       setDetected(data.framework);
       setStatus("working");
     } catch {
@@ -150,16 +164,34 @@ export default function Home() {
     }
   }
 
+  // Switching the review type swaps to that type's own work-log. Each type
+  // keeps its issues independently, so we never touch the other slots. We just
+  // point `status` at whatever the target type already has: if it was analyzed
+  // before, show its results; otherwise it's idle, ready for a first Analyze.
+  function handleReviewTypeChange(id: string) {
+    if (id === reviewType) return;
+    setReviewType(id);
+    setErrorMsg("");
+    setDetected(null);
+    const target = sessionFor(sessions, id);
+    setStatus(target.revision > 0 ? "working" : "idle");
+  }
+
   function handleGotIt(id: string) {
-    setSession((prev) => markGotIt(prev, id));
+    setSessions((prev) => ({
+      ...prev,
+      [reviewType]: markGotIt(sessionFor(prev, reviewType), id),
+    }));
   }
 
   function handleFinish() {
     setStatus("finished");
   }
 
+  // "Keep going" from the completion summary resets ONLY the active review
+  // type's work-log — other types keep their progress.
   function handleReset() {
-    setSession(emptySession());
+    setSessions((prev) => ({ ...prev, [reviewType]: emptySession() }));
     setStatus("idle");
   }
 
@@ -227,7 +259,7 @@ export default function Home() {
                       className={`review-option ${
                         rt.id === reviewType ? "review-option--active" : ""
                       }`}
-                      onClick={() => setReviewType(rt.id)}
+                      onClick={() => handleReviewTypeChange(rt.id)}
                       aria-pressed={rt.id === reviewType}
                     >
                       {rt.label}

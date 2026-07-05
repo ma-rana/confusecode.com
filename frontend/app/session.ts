@@ -26,6 +26,8 @@ export interface TrackedIssue {
   firstSeenRev: number;
   /** Revision where it was last present in the analysis. */
   lastSeenRev: number;
+  /** The review type that was active when this issue was found. */
+  reviewType: string;
   /** True once the analyzer stops reporting it (the user fixed it). */
   goneFromAnalysis: boolean;
 }
@@ -42,20 +44,45 @@ export function emptySession(): SessionState {
 }
 
 /**
+ * A separate work-log per review type. Each review type ("bugs", "confusing",
+ * …) tracks its own issues independently, so switching the "What kind of
+ * review?" button shows only that type's session and never mixes findings from
+ * different types. Keyed by review-type id.
+ */
+export type SessionsByType = Record<string, SessionState>;
+
+/** Read one review type's session, or an empty one if it hasn't been run yet. */
+export function sessionFor(
+  sessions: SessionsByType,
+  reviewType: string,
+): SessionState {
+  return sessions[reviewType] ?? emptySession();
+}
+
+/**
  * Fold a fresh analysis (list of cards) into the work-log, producing the next
  * session state. Pure: same inputs → same output.
  *
+ * `reviewType` is the review type that produced THIS analysis. It matters for
+ * the "gone" logic below: an issue may be absent from this analysis simply
+ * because it belongs to a DIFFERENT review type whose rules didn't run. That is
+ * not a fix, so we only mark an issue gone/resolved when it belongs to the
+ * review type currently being analyzed. Issues from other review types are left
+ * exactly as they are.
+ *
  * Rules:
- *  - A card whose id is new → add as a new open issue.
+ *  - A card whose id is new → add as a new open issue, tagged with reviewType.
  *  - A card whose id already exists → still present; update its card content
  *    and lastSeenRev, and clear any "gone" flag (it came back).
- *  - A tracked issue NOT in this analysis → the user fixed it: mark it gone.
- *    If the user had already pressed "got it", it becomes "resolved"; otherwise
- *    it's still counted as resolved-by-fix but we keep its prior status label.
+ *  - A tracked issue of THIS reviewType, not in this analysis → the user fixed
+ *    it: mark it gone.
+ *  - A tracked issue of a DIFFERENT reviewType, not in this analysis → untouched
+ *    (its rules weren't even run, so absence means nothing).
  */
 export function foldAnalysis(
   prev: SessionState,
   cards: Card[],
+  reviewType: string,
 ): SessionState {
   const revision = prev.revision + 1;
   const cardById = new Map(cards.map((c) => [c.id, c]));
@@ -68,10 +95,16 @@ export function foldAnalysis(
         ...issue,
         card: stillPresent,
         lastSeenRev: revision,
+        reviewType,
         goneFromAnalysis: false,
       };
     }
-    // Not in this analysis → the analyzer no longer flags it (fixed).
+    // Absent from this analysis. Only treat it as fixed if it belongs to the
+    // review type we actually just ran — otherwise its rules never ran, so its
+    // absence tells us nothing. Leave cross-type issues completely untouched.
+    if (issue.reviewType !== reviewType) {
+      return issue;
+    }
     return {
       ...issue,
       goneFromAnalysis: true,
@@ -89,6 +122,7 @@ export function foldAnalysis(
         status: "open",
         firstSeenRev: revision,
         lastSeenRev: revision,
+        reviewType,
         goneFromAnalysis: false,
       });
     }
