@@ -263,12 +263,27 @@ body {
   height: 6px;
   margin-left: 0.45rem;
   border-radius: 50%;
-  background: var(--highlighter);
+  background: var(--ink-faint);
   vertical-align: middle;
 }
 
-.review-option--active .review-option__dot {
+/* State colours, matching the file tabs: amber = open issues remain,
+   green = everything flagged is resolved/understood. */
+.review-option__dot--open {
+  background: var(--warn);
+}
+
+.review-option__dot--clear {
+  background: #4a8f5f;
+}
+
+/* On the active (dark) button, lift the dots so they stay legible. */
+.review-option--active .review-option__dot--open {
   background: var(--highlighter);
+}
+
+.review-option--active .review-option__dot--clear {
+  background: #7bc99a;
 }
 
 .review-blurb {

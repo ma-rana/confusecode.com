@@ -128,6 +128,24 @@ export function fileState(file: OpenFile): FileState {
 }
 
 /**
+ * A single review-type session's state, for colouring its button dot under
+ * "What kind of review?":
+ *  - "none": not analyzed yet — no dot shown.
+ *  - "open": analyzed and still has unresolved issues — amber.
+ *  - "clear": analyzed and everything flagged is resolved/understood (or it
+ *    came back clean) — success green.
+ */
+export type SessionDotState = "none" | "open" | "clear";
+
+export function sessionDotState(session: SessionState): SessionDotState {
+  if (session.revision === 0) return "none";
+  const p = progressOf(session);
+  // Analyzed but nothing flagged, or everything flagged is now done.
+  if (p.total === 0 || p.done === p.total) return "clear";
+  return "open";
+}
+
+/**
  * Fold a fresh analysis (list of cards) into the work-log, producing the next
  * session state. Pure: same inputs → same output.
  *

@@ -15,6 +15,7 @@ import {
   summarize,
   sessionFor,
   fileHasWork,
+  sessionDotState,
   type SessionsByType,
   type OpenFile,
 } from "./session";
@@ -386,8 +387,9 @@ export default function Home() {
                 </p>
                 <div className="review-options">
                   {reviewTypes.map((rt) => {
-                    const hasWork =
-                      sessionFor(activeFile.sessions, rt.id).revision > 0;
+                    const dot = sessionDotState(
+                      sessionFor(activeFile.sessions, rt.id),
+                    ); // "none" | "open" | "clear"
                     return (
                       <button
                         key={rt.id}
@@ -398,10 +400,14 @@ export default function Home() {
                         aria-pressed={rt.id === reviewType}
                       >
                         {rt.label}
-                        {hasWork && (
+                        {dot !== "none" && (
                           <span
-                            className="review-option__dot"
-                            aria-label="has active session"
+                            className={`review-option__dot review-option__dot--${dot}`}
+                            aria-label={
+                              dot === "clear"
+                                ? "all issues resolved"
+                                : "has open issues"
+                            }
                           />
                         )}
                       </button>
