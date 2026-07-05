@@ -22,7 +22,8 @@ export type ReviewType =
   | "confusing"
   | "security"
   | "dead-code"
-  | "runtime";
+  | "runtime"
+  | "react";
 
 export interface ReviewPreset {
   id: ReviewType;
@@ -94,6 +95,24 @@ const PRESETS: Record<ReviewType, ReviewPreset> = {
       "no-use-before-define": ["warn", { functions: false }],
       "use-isnan": "error",
       "no-cond-assign": ["warn", "always"],
+    },
+  },
+
+  // Framework preset: React/JSX. Uses eslint-plugin-react +
+  // eslint-plugin-react-hooks, registered in the worker. These rules parse only
+  // (no execution), same as core rules — the plugin just knows JSX and hooks.
+  react: {
+    id: "react",
+    label: "Find React issues",
+    blurb: "Common React and Hooks mistakes in JSX/TSX components.",
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+      "react/jsx-key": "error",
+      "react/no-direct-mutation-state": "error",
+      "react/no-children-prop": "warn",
+      "react/jsx-no-duplicate-props": "error",
+      "react/no-unescaped-entities": "warn",
     },
   },
 };

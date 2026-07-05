@@ -5,6 +5,8 @@ import Editor from "@monaco-editor/react";
 import { WorkLog } from "./components/WorkLog";
 import { ProgressBar } from "./components/ProgressBar";
 import { CompletionSummary } from "./components/CompletionSummary";
+import { FileDrop } from "./components/FileDrop";
+import { ConfirmSwitch } from "./components/ConfirmSwitch";
 import {
   emptySession,
   foldAnalysis,
@@ -13,13 +15,14 @@ import {
   summarize,
   type SessionState,
 } from "./session";
+import type { FileReadOk } from "./file-upload";
 import type {
   AnalyzeResponse,
   ReviewTypeOption,
   ReviewTypesResponse,
 } from "./types";
 
-const STARTER = `// Paste your JavaScript or TypeScript here.
+const STARTER = `// Paste your JavaScript or TypeScript here, or drop a file above.
 // ConfuseCode finds issues and explains why they matter —
 // then leaves the fixing to you.
 
@@ -35,16 +38,24 @@ function total(items) {
 
 type Status = "idle" | "analyzing" | "working" | "finished" | "error";
 
+// The filename sent to the server when the user is pasting (no real file).
+const PASTED_TS = "input.ts";
+const PASTED_JS = "input.js";
+
 export default function Home() {
   const [code, setCode] = useState<string>(STARTER);
   const [language, setLanguage] = useState<"typescript" | "javascript">(
     "typescript",
   );
+  // The current file's display name. For pasted code we use a synthetic name.
+  const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
   const [reviewType, setReviewType] = useState<string>("errors");
   const [session, setSession] = useState<SessionState>(emptySession());
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  // A validated file waiting on the user's confirm to switch sessions (§6.5).
+  const [pendingFile, setPendingFile] = useState<FileReadOk | null>(null);
 
   useEffect(() => {
     fetch("/api/review-types")
@@ -56,18 +67,61 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  const inSession = session.revision > 0;
+
+  // Load a validated file's contents into the editor, starting fresh (§6.5).
+  function loadFile(file: FileReadOk) {
+    setCode(file.code);
+    setLanguage(file.language);
+    setFilename(file.filename);
+    setSession(emptySession());
+    setStatus("idle");
+    setErrorMsg("");
+    setPendingFile(null);
+  }
+
+  // The §6.5 decision flow. The file is already validated by FileDrop.
+  function handleValidFile(file: FileReadOk) {
+    setErrorMsg("");
+
+    // Same filename → just reload it, no session-clobber prompt needed.
+    if (file.filename === filename) {
+      loadFile(file);
+      return;
+    }
+
+    // A different file, but no active session → load directly.
+    if (!inSession) {
+      loadFile(file);
+      return;
+    }
+
+    // Different file mid-session → ask before clearing progress (§6.5, step 3).
+    setPendingFile(file);
+  }
+
+  function handleFileError(message: string) {
+    // A bad file is rejected WITHOUT touching the current session (§6.5).
+    setErrorMsg(message);
+  }
+
   async function runAnalyze() {
     setStatus("analyzing");
     setErrorMsg("");
     try {
+      // For a real uploaded file we send its actual name (drives extension
+      // routing server-side); for pasted code we send a synthetic name.
+      const sentName =
+        filename === "pasted code"
+          ? language === "typescript"
+            ? PASTED_TS
+            : PASTED_JS
+          : filename;
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          filename: language === "typescript" ? "input.ts" : "input.js",
-          reviewType,
-        }),
+        body: JSON.stringify({ code, filename: sentName, reviewType }),
       });
       const data = (await res.json()) as AnalyzeResponse;
 
@@ -79,7 +133,6 @@ export default function Home() {
         return;
       }
 
-      // Fold this analysis into the running work-log (§6.4).
       setSession((prev) => foldAnalysis(prev, data.cards));
       setStatus("working");
     } catch {
@@ -97,14 +150,12 @@ export default function Home() {
   }
 
   function handleReset() {
-    // Explicit, non-destructive-by-accident: starting fresh clears the log.
     setSession(emptySession());
     setStatus("idle");
   }
 
   const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
   const progress = progressOf(session);
-  const inSession = session.revision > 0;
 
   return (
     <main className="page">
@@ -128,8 +179,10 @@ export default function Home() {
       ) : (
         <>
           <section className="workbench">
+            <FileDrop onFile={handleValidFile} onError={handleFileError} />
+
             <p className="panel-label">
-              <span>Your code</span>
+              <span>{filename === "pasted code" ? "Your code" : filename}</span>
               {inSession && (
                 <span className="rev-badge">revision {session.revision}</span>
               )}
@@ -223,11 +276,11 @@ export default function Home() {
             </div>
           )}
 
-          {status === "idle" && (
+          {status === "idle" && !errorMsg && (
             <div className="empty-state">
               <strong>Nothing analyzed yet.</strong>
-              Write or paste some JavaScript or TypeScript above, pick what kind
-              of review you want, then press Analyze.
+              Drop a file or paste code above, pick what kind of review you want,
+              then press Analyze.
             </div>
           )}
 
@@ -238,6 +291,15 @@ export default function Home() {
             </>
           )}
         </>
+      )}
+
+      {pendingFile && (
+        <ConfirmSwitch
+          currentName={filename}
+          nextName={pendingFile.filename}
+          onCancel={() => setPendingFile(null)}
+          onConfirm={() => loadFile(pendingFile)}
+        />
       )}
 
       <footer className="footer">

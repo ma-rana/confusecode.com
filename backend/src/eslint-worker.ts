@@ -1,6 +1,8 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { Linter } from "eslint";
 import tsParser from "@typescript-eslint/parser";
+import reactPlugin from "eslint-plugin-react";
+import reactHooksPlugin from "eslint-plugin-react-hooks";
 
 /**
  * Runs INSIDE a worker thread (spawned by analyze.ts).
@@ -22,7 +24,7 @@ import tsParser from "@typescript-eslint/parser";
  * into the worker thread.
  */
 
-import type { Linter as LinterNS } from "eslint";
+import type { Linter as LinterNS, ESLint } from "eslint";
 
 export interface RawFinding {
   ruleId: string | null;
@@ -41,15 +43,40 @@ const { code, rules } = workerData as WorkerInput;
 
 const linter = new Linter();
 
+/**
+ * ESLint 9's Linter defaults to FLAT CONFIG. In flat config, plugin rules are
+ * not pre-registered with defineRule (that method is disabled here) — instead
+ * the plugins are handed to verify() under a `plugins` key, and rules are
+ * referenced by their namespaced id ("react/...", "react-hooks/...").
+ *
+ * Listing a plugin a given preset doesn't use is harmless: no rule fires unless
+ * the preset turns it on. So we always expose the JS-ecosystem plugins and let
+ * the preset (passed in via workerData) decide what's active. Core ESLint rules
+ * still need no plugin entry.
+ */
+const PLUGINS = {
+  react: reactPlugin,
+  "react-hooks": reactHooksPlugin,
+} as unknown as Record<string, ESLint.Plugin>;
+
 // Phase 3: the rule set is chosen by the review type the user picked (§6.1) and
 // passed in from the parent. The curated presets ARE the intelligence — no
 // model, just measured rules.
 const messages = linter.verify(code, {
+  plugins: PLUGINS,
+  // React plugin reads settings.react.version; "detect" needs the real package
+  // installed in the analyzed project, which we don't have (we only parse a
+  // snippet), so we pin a modern version to silence the version warning.
+  settings: { react: { version: "18.0" } },
   languageOptions: {
     ecmaVersion: 2022,
     sourceType: "module",
     // typescript-eslint parser handles both JS and TS syntax.
     parser: tsParser,
+    parserOptions: {
+      // Enable JSX parsing so React/JSX presets can see the syntax.
+      ecmaFeatures: { jsx: true },
+    },
     // Standard globals so common runtime names aren't false-flagged by no-undef.
     globals: {
       console: "readonly",

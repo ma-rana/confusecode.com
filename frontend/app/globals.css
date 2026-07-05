@@ -679,6 +679,123 @@ body {
   max-width: 52ch;
 }
 
+/* ---- File upload (§6.5) ---- */
+
+.filedrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1.5px dashed var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.filedrop--over {
+  border-color: var(--highlighter);
+  background: var(--highlighter-wash);
+}
+
+.filedrop__input {
+  display: none;
+}
+
+.filedrop__text {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.filedrop__btn {
+  font-family: var(--font-prose);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--highlighter);
+  padding: 0 0.1rem 0.05rem;
+  cursor: pointer;
+}
+
+.filedrop__btn:hover {
+  color: #8a6d08;
+}
+
+.filedrop__btn:focus-visible {
+  outline: 3px solid var(--highlighter);
+  outline-offset: 3px;
+}
+
+/* Confirm-switch modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 32, 51, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--paper-raised);
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  max-width: 460px;
+  width: 100%;
+  padding: 1.75rem 1.75rem 1.5rem;
+  box-shadow: 0 12px 40px rgba(28, 32, 51, 0.25);
+}
+
+.modal__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.modal__body {
+  margin: 0 0 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.modal__actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-ghost {
+  font-family: var(--font-prose);
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.btn-ghost:focus-visible {
+  outline: 3px solid var(--highlighter);
+  outline-offset: 2px;
+}
+
 /* ---- Accessibility floor ---- */
 
 @media (prefers-reduced-motion: reduce) {

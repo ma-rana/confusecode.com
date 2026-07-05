@@ -155,6 +155,77 @@ export const RULE_EDUCATION: Record<string, EducationContent> = {
     investigate:
       "Research how `var`, `let`, `const`, and function declarations differ in when they become usable. That difference is exactly what this finding is about.",
   },
+
+  // ---- React / JSX (framework preset) ----
+  "react-hooks/rules-of-hooks": {
+    title: "A Hook called in the wrong place",
+    severity: "high",
+    why: "React Hooks have to be called in the same order on every render, so they can only live at the top level of a component or another Hook — never inside a condition, loop, or nested function. Break that and React loses track of which state belongs to which Hook, which corrupts state in ways that are maddening to debug.",
+    concept: "Rules of Hooks & render order",
+    difficulty: "intermediate",
+    investigate:
+      "Find which Hook this is and what it's nested inside — an if, a loop, a callback? Research why React depends on Hooks running in a stable order, and that will tell you where this call actually belongs.",
+  },
+
+  "react-hooks/exhaustive-deps": {
+    title: "A dependency array that doesn't match",
+    severity: "medium",
+    why: "This effect (or memo/callback) reads a value that isn't in its dependency array, so React won't re-run it when that value changes. The effect then runs with a stale copy — the classic 'why is it showing the old value?' bug.",
+    concept: "effect dependencies & closures",
+    difficulty: "advanced",
+    investigate:
+      "List every value from component scope that the effect body uses, then compare that to what's in the array. Research how a closure captures values at render time to understand why the missing one goes stale.",
+  },
+
+  "react/jsx-key": {
+    title: "A list without keys",
+    severity: "medium",
+    why: "When you render a list, React uses a `key` on each item to tell which one changed, moved, or was removed. Without stable keys it falls back to position, which can reuse the wrong element and scramble state or inputs across rows.",
+    concept: "list reconciliation & keys",
+    difficulty: "beginner",
+    investigate:
+      "Find the array you're mapping over and ask what makes each item uniquely itself. Research why the array index is usually a poor key before reaching for it.",
+  },
+
+  "react/no-direct-mutation-state": {
+    title: "Changing state directly",
+    severity: "high",
+    why: "Assigning to state in place doesn't tell React anything changed, so it won't re-render — and the value you mutated may be read inconsistently. React relies on you replacing state through its setter, not editing it underneath.",
+    concept: "immutability & state updates",
+    difficulty: "intermediate",
+    investigate:
+      "Look at how this state was created and how React expects it to be updated. Research why React treats state as immutable and what the setter gives you that direct assignment doesn't.",
+  },
+
+  "react/no-children-prop": {
+    title: "Passing children as a prop",
+    severity: "low",
+    why: "Passing `children` as an explicit prop works but sidesteps the normal JSX nesting that React and other readers expect. It's usually a sign of a misunderstanding about how content gets into a component.",
+    concept: "children & composition",
+    difficulty: "beginner",
+    investigate:
+      "Research how JSX passes nested content to a component as children, then compare that to what you've written here and decide which reads more clearly.",
+  },
+
+  "react/jsx-no-duplicate-props": {
+    title: "The same prop set twice",
+    severity: "medium",
+    why: "When a JSX element lists the same prop twice, the last one silently wins and the first is discarded. If you expected both to take effect, one of your values is quietly vanishing.",
+    concept: "JSX props",
+    difficulty: "beginner",
+    investigate:
+      "Find both copies of the prop and decide which value you actually want. Then work out how the duplicate got there — often a copy-paste or a merge slip.",
+  },
+
+  "react/no-unescaped-entities": {
+    title: "Raw characters in JSX text",
+    severity: "low",
+    why: "Certain characters like quotes and angle brackets have special meaning in JSX, so left raw they can render oddly or be read as markup. It rarely breaks loudly, which is exactly why it slips through.",
+    concept: "JSX text & escaping",
+    difficulty: "beginner",
+    investigate:
+      "Identify which character on this line is the culprit, then research how JSX wants that character written in visible text.",
+  },
 };
 
 /**
