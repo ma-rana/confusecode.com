@@ -19,7 +19,6 @@ import type { FileReadOk, EditorLanguage, Framework } from "./file-upload";
 import {
   monacoMode,
   pastedExt,
-  profileOf,
   languageForFramework,
   frameworkForLanguage,
   FRAMEWORK_LABELS,
@@ -126,7 +125,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, filename: sentName, reviewType }),
+        body: JSON.stringify({ code, filename: sentName, reviewType, framework }),
       });
       const data = (await res.json()) as AnalyzeResponse;
 
@@ -166,24 +165,6 @@ export default function Home() {
     setFramework(fw);
     setLanguage(languageForFramework(fw));
   }
-
-  // The analyzer profile of the current file/flavor. Framework presets only
-  // apply to matching profiles (e.g. Vue rules need a .vue file), so we filter
-  // the menu to presets that fit and keep the selection valid as files change.
-  const currentProfile = profileOf(language);
-  const visibleReviewTypes = reviewTypes.filter((r) =>
-    r.profiles.includes(currentProfile),
-  );
-
-  // If the current selection isn't valid for this file's profile, snap back to
-  // the first that is (the general presets always qualify), so the user never
-  // sits on a preset that's hidden or would be server-side-overridden.
-  useEffect(() => {
-    if (visibleReviewTypes.length === 0) return;
-    if (!visibleReviewTypes.some((r) => r.id === reviewType)) {
-      setReviewType(visibleReviewTypes[0]!.id);
-    }
-  }, [visibleReviewTypes, reviewType]);
 
   const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
   const progress = progressOf(session);
@@ -237,13 +218,13 @@ export default function Home() {
               />
             </div>
 
-            {visibleReviewTypes.length > 0 && (
+            {reviewTypes.length > 0 && (
               <div className="review-picker" role="group" aria-label="Review type">
                 <p className="panel-label">
                   <span>What kind of review?</span>
                 </p>
                 <div className="review-options">
-                  {visibleReviewTypes.map((rt) => (
+                  {reviewTypes.map((rt) => (
                     <button
                       key={rt.id}
                       className={`review-option ${

@@ -4,7 +4,6 @@ import cors from "@fastify/cors";
 import { CONFIG } from "./config.js";
 import { validateSubmission, type SubmissionInput } from "./validate.js";
 import { routeByExtension } from "./router.js";
-import { profileNameForExt } from "./analyzers.js";
 import { analyze } from "./analyze.js";
 import { educate } from "./educate.js";
 import { ConcurrencyGate } from "./semaphore.js";
@@ -12,8 +11,8 @@ import {
   REVIEW_MENU,
   DEFAULT_REVIEW_TYPE,
   isReviewType,
-  rulesForReview,
-  reviewSupportsProfile,
+  isFramework,
+  rulesFor,
 } from "./review-presets.js";
 
 /**
@@ -65,16 +64,23 @@ app.post("/api/analyze", async (req, reply) => {
 
   try {
     // Validate every input, every time (§7.2). Fail closed.
-    const body = (req.body ?? {}) as SubmissionInput & { reviewType?: unknown };
+    const body = (req.body ?? {}) as SubmissionInput & {
+      reviewType?: unknown;
+      framework?: unknown;
+    };
     const result = validateSubmission(body);
     if (!result.ok) {
       return reply.code(400).send({ error: result.error });
     }
 
     // Resolve the review type. Unknown/absent → default preset (fail safe).
-    const requestedReview = isReviewType(body.reviewType)
+    const reviewType = isReviewType(body.reviewType)
       ? body.reviewType
       : DEFAULT_REVIEW_TYPE;
+
+    // Resolve the framework (drives which framework rules merge in). Unknown or
+    // absent → null, meaning "just the review rules, no framework overlay".
+    const framework = isFramework(body.framework) ? body.framework : null;
 
     // Route to an analyzer. All extensions resolve to ESLint, but ESLint drives
     // different parsers per file family (JS/TS, Vue, Svelte) — see analyzers.ts.
@@ -89,21 +95,16 @@ app.post("/api/analyze", async (req, reply) => {
       return reply.code(400).send({ error: "Unsupported language." });
     }
 
-    // A framework preset only works on the file families its plugin can parse
-    // (e.g. a Vue preset needs a .vue file). If the chosen review doesn't fit
-    // this file, fall back to the default general preset rather than erroring —
-    // it runs on any family, so the user still gets useful findings.
-    const profile = profileNameForExt(result.ext);
-    const reviewType =
-      profile && reviewSupportsProfile(requestedReview, profile)
-        ? requestedReview
-        : DEFAULT_REVIEW_TYPE;
+    // The rule set = the chosen review type's rules PLUS the selected framework's
+    // rules. Framework rules only fire when the file's parser has that plugin
+    // active, which is guaranteed because the same framework choice picks the
+    // parser too. So "Vue + Find errors" runs Vue rules and error rules together.
+    const rules = rulesFor(reviewType, framework);
 
-    const findings = await analyze(result.code, result.ext, rulesForReview(reviewType));
+    const findings = await analyze(result.code, result.ext, rules);
     // Translate raw findings into educational cards (§6.2) — the teaching layer.
     const cards = educate(findings);
     // Code is discarded here — nothing is retained (§4.4).
-    // Echo back the review actually used (may differ from requested on fallback).
     return reply.send({ cards, reviewType });
   } catch (err) {
     // Generic outward message; detail stays in server logs only (§7.10).

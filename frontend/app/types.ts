@@ -24,8 +24,6 @@ export interface ReviewTypeOption {
   id: string;
   label: string;
   blurb: string;
-  /** Analyzer profiles this review supports ("js", "vue", "svelte"). */
-  profiles: string[];
 }
 
 export interface AnalyzeSuccess {
