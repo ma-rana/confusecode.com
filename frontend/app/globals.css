@@ -289,19 +289,44 @@ body {
   margin-top: 1.5rem;
 }
 
+/* The scrollable, drag-to-scroll strip. Scrollbar is hidden; you drag the
+   strip horizontally to move through tabs when there are more than fit. */
+.file-tabs__strip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  /* Hide scrollbar, Firefox + IE */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* Hide scrollbar, WebKit */
+.file-tabs__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.file-tabs__strip--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .file-tabs__list {
   list-style: none;
   margin: 0;
   padding: 0 0 0.4rem;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.4rem;
   border-bottom: 1px solid var(--rule);
+  width: max-content;
+  min-width: 100%;
 }
 
 .file-tab__wrap {
   display: inline-flex;
   align-items: stretch;
+  flex: none;
   border: 1px solid var(--rule);
   border-radius: var(--radius) var(--radius) 0 0;
   background: var(--paper);
@@ -311,6 +336,7 @@ body {
 .file-tab__wrap:has(.file-tab--active) {
   background: var(--paper-raised);
   border-color: var(--ink);
+  border-top-color: var(--ink);
   border-bottom-color: var(--paper-raised);
 }
 
@@ -331,6 +357,60 @@ body {
 .file-tab--active {
   color: var(--ink);
   font-weight: 500;
+}
+
+/* Per-file state: a coloured dot + a top accent bar so you can tell files
+   apart down the strip. green = all resolved/clean, amber = open issues
+   remain, faint = not analyzed yet. */
+.file-tab__state-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.file-tab__state-dot--open {
+  background: var(--warn);
+}
+
+.file-tab__state-dot--clear {
+  background: #4a8f5f;
+}
+
+.file-tab__state-dot--finished {
+  background: #2e8b57;
+  box-shadow: 0 0 0 2px rgba(46, 139, 87, 0.2);
+}
+
+.file-tab__state-dot--fresh {
+  background: var(--ink-faint);
+}
+
+.file-tab__wrap {
+  border-top-width: 2px;
+  border-top-color: var(--rule);
+}
+
+/* Inactive tabs get a state-coloured top accent; the active tab keeps its full
+   ink border (below) and shows state via the dot only. */
+.file-tab__wrap:not(:has(.file-tab--active)):has(.file-tab--state-open) {
+  border-top-color: var(--warn);
+}
+
+.file-tab__wrap:not(:has(.file-tab--active)):has(.file-tab--state-clear) {
+  border-top-color: #4a8f5f;
+}
+
+/* Finished = signed off with "Finish now": a stronger success green, plus a
+   faint green wash on the whole tab so it clearly reads as done. */
+.file-tab__wrap:not(:has(.file-tab--active)):has(.file-tab--state-finished) {
+  border-top-color: #2e8b57;
+  background: #eef6f0;
+}
+
+.file-tab--state-finished .file-tab__name {
+  color: #2e6b47;
 }
 
 .file-tab__name {

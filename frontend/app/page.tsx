@@ -6,6 +6,7 @@ import { WorkLog } from "./components/WorkLog";
 import { ProgressBar } from "./components/ProgressBar";
 import { CompletionSummary } from "./components/CompletionSummary";
 import { FileDrop } from "./components/FileDrop";
+import { FileTabs } from "./components/FileTabs";
 import {
   emptySession,
   foldAnalysis,
@@ -13,7 +14,6 @@ import {
   progressOf,
   summarize,
   sessionFor,
-  openIssueCount,
   fileHasWork,
   type SessionsByType,
   type OpenFile,
@@ -40,7 +40,7 @@ function total(items) {
 }
 `;
 
-type Status = "idle" | "analyzing" | "working" | "finished" | "error";
+type Status = "idle" | "analyzing" | "working" | "error";
 
 // Display labels for auto-detected frameworks (server returns the lowercase id).
 const DETECTED_LABELS: Record<string, string> = {
@@ -71,6 +71,7 @@ function starterFile(): OpenFile {
     language: "tsx",
     code: STARTER,
     sessions: {},
+    finished: false,
   };
 }
 
@@ -103,6 +104,9 @@ export default function Home() {
     files.find((f) => f.fileId === activeFileId) ?? files[0];
   const session = sessionFor(activeFile.sessions, reviewType);
   const inSession = session.revision > 0;
+  // Whether the active file has been signed off with "Finish now". Per file, so
+  // the completion summary follows the file you're viewing.
+  const isFinished = activeFile.finished;
 
   // Update the active file immutably.
   function patchActiveFile(patch: Partial<OpenFile>) {
@@ -135,6 +139,7 @@ export default function Home() {
       language: file.language,
       code: file.code,
       sessions: {},
+      finished: false,
     };
     setFiles((prev) => [...prev, opened]);
     setActiveFileId(opened.fileId);
@@ -151,6 +156,7 @@ export default function Home() {
       language: file.language,
       code: file.code,
       sessions: {},
+      finished: false,
     });
     setStatus("idle");
     setErrorMsg("");
@@ -288,13 +294,16 @@ export default function Home() {
   }
 
   function handleFinish() {
-    setStatus("finished");
+    // Mark THIS file finished. Persists per file, so switching away and back
+    // keeps the completion summary; the tab turns the success colour.
+    patchActiveFile({ finished: true });
   }
 
-  // "Keep going" resets ONLY the active file's active review type.
+  // "Keep working on this file" — clears only the active file's finished flag and
+  // returns to its work-log. Other files and their completion state are untouched.
   function handleReset() {
-    patchActiveSessions((prev) => ({ ...prev, [reviewType]: emptySession() }));
-    setStatus("idle");
+    patchActiveFile({ finished: false });
+    setStatus(inSession ? "working" : "idle");
   }
 
   const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
@@ -319,40 +328,15 @@ export default function Home() {
 
       {/* File tabs — one per open file, each with its own independent work. */}
       {files.length > 1 && (
-        <nav className="file-tabs" aria-label="Open files">
-          <ul className="file-tabs__list">
-            {files.map((f) => {
-              const open = openIssueCount(f);
-              return (
-                <li key={f.fileId} className="file-tab__wrap">
-                  <button
-                    className={`file-tab ${
-                      f.fileId === activeFileId ? "file-tab--active" : ""
-                    }`}
-                    onClick={() => handleSwitchFile(f.fileId)}
-                    aria-current={f.fileId === activeFileId ? "true" : undefined}
-                  >
-                    <span className="file-tab__name">{f.filename}</span>
-                    {open > 0 && (
-                      <span className="file-tab__badge">{open}</span>
-                    )}
-                  </button>
-                  <button
-                    className="file-tab__close"
-                    onClick={() => handleCloseFile(f.fileId)}
-                    aria-label={`Close ${f.filename}`}
-                    title={`Close ${f.filename}`}
-                  >
-                    ×
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+        <FileTabs
+          files={files}
+          activeFileId={activeFileId}
+          onSwitch={handleSwitchFile}
+          onClose={handleCloseFile}
+        />
       )}
 
-      {status === "finished" ? (
+      {isFinished ? (
         <CompletionSummary summary={summarize(session)} onKeepGoing={handleReset} />
       ) : (
         <>

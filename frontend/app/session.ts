@@ -76,6 +76,13 @@ export interface OpenFile {
   code: string;
   /** This file's per-review-type work-logs. */
   sessions: SessionsByType;
+  /**
+   * True once the user pressed "Finish now" for this file. Persists per file, so
+   * switching away and back keeps the completion state; cleared by "Keep working
+   * on this file". Drives the success colour on the file's tab and keeps the
+   * completion summary shown while this file is active.
+   */
+  finished: boolean;
 }
 
 /** Total open issues across every review type of one file (for the file tab badge). */
@@ -90,6 +97,34 @@ export function openIssueCount(file: OpenFile): number {
 /** True if any review type of this file has been analyzed at least once. */
 export function fileHasWork(file: OpenFile): boolean {
   return Object.values(file.sessions).some((s) => s.revision > 0);
+}
+
+/**
+ * A file's overall state, used to colour its tab so you can tell files apart at
+ * a glance:
+ *  - "fresh": never analyzed — neutral.
+ *  - "open": analyzed and still has unresolved issues — needs attention.
+ *  - "clear": analyzed, everything flagged is now resolved/understood, but the
+ *    user hasn't pressed Finish yet — done, not signed off.
+ *  - "finished": the user pressed "Finish now" for this file — success.
+ */
+export type FileState = "fresh" | "open" | "clear" | "finished";
+
+export function fileState(file: OpenFile): FileState {
+  if (file.finished) return "finished";
+  if (!fileHasWork(file)) return "fresh";
+
+  let total = 0;
+  let done = 0;
+  for (const s of Object.values(file.sessions)) {
+    const p = progressOf(s);
+    total += p.total;
+    done += p.done;
+  }
+
+  // Analyzed but nothing was ever flagged, or everything flagged is now done.
+  if (total === 0 || done === total) return "clear";
+  return "open";
 }
 
 /**
