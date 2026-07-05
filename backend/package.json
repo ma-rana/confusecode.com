@@ -8,6 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:prod": "node dist/migrate.js",
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {
@@ -15,10 +17,12 @@
     "@fastify/rate-limit": "^10.2.1",
     "@typescript-eslint/parser": "^8.18.0",
     "eslint": "^9.17.0",
-    "fastify": "^5.2.0"
+    "fastify": "^5.2.0",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.20.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
