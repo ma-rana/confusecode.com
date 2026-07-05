@@ -11,24 +11,155 @@
 
 // Mirror of the server's CONFIG (backend/src/config.ts). Kept in sync by hand;
 // the server is authoritative if they ever drift.
-const ALLOWED_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"];
+const ALLOWED_EXTENSIONS = [
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".mjs",
+  ".cjs",
+  ".vue",
+  ".svelte",
+];
 const MAX_BYTES = 1_000_000; // ~1 MB
 
 /**
- * The editor language flavors the app offers. These are JS/TS-family only.
- * Monaco has just two relevant modes — "typescript" and "javascript" — and each
- * covers its JSX variant, so the flavor here also carries the extension we send
- * to the server for pasted code (which drives the analyzer's routing).
+ * The editor language flavors the app offers, across the JS/TS family plus the
+ * two single-file-component formats we support (Vue, Svelte). The flavor drives
+ * the Monaco editor mode AND the synthetic filename we send to the server for
+ * pasted code (which routes to the right analyzer profile).
  */
-export type EditorLanguage = "typescript" | "tsx" | "javascript" | "jsx";
+export type EditorLanguage =
+  | "typescript"
+  | "tsx"
+  | "javascript"
+  | "jsx"
+  | "vue"
+  | "svelte";
 
-/** Monaco editor mode for a given flavor. TSX rides the TS mode; JSX the JS mode. */
-export function monacoMode(lang: EditorLanguage): "typescript" | "javascript" {
-  return lang === "typescript" || lang === "tsx" ? "typescript" : "javascript";
+/** The analyzer profile family a flavor belongs to — mirrors backend ProfileName. */
+export type Profile = "js" | "vue" | "svelte";
+
+/**
+ * The frameworks shown in the picker. This is the label the user chooses; each
+ * maps to an editor flavor (which drives the Monaco mode and the file extension
+ * sent to the server). Several frameworks share a flavor — e.g. React, Next, and
+ * Remix are all .tsx to the analyzer — which is expected: the framework label is
+ * for the user's clarity, the flavor is what the parser needs.
+ */
+export type Framework =
+  | "react"
+  | "next"
+  | "vue"
+  | "nuxt"
+  | "angular"
+  | "svelte"
+  | "node"
+  | "express"
+  | "nest"
+  | "remix";
+
+/** Display label for each framework, shown in the dropdown. */
+export const FRAMEWORK_LABELS: Record<Framework, string> = {
+  react: "React",
+  next: "Next.js",
+  vue: "Vue.js",
+  nuxt: "Nuxt.js",
+  angular: "Angular",
+  svelte: "Svelte / SvelteKit",
+  node: "Node.js",
+  express: "Express.js",
+  nest: "NestJS",
+  remix: "Remix",
+};
+
+/** Order the dropdown renders frameworks in. */
+export const FRAMEWORK_ORDER: Framework[] = [
+  "react",
+  "next",
+  "vue",
+  "nuxt",
+  "angular",
+  "svelte",
+  "node",
+  "express",
+  "nest",
+  "remix",
+];
+
+/**
+ * Which editor flavor each framework uses. This is the single source of truth
+ * tying a framework choice to the parser profile:
+ *   - React / Next / Remix  → tsx  (JSX + TS)
+ *   - Angular / Nest        → typescript (decorators, no JSX)
+ *   - Node / Express        → javascript
+ *   - Vue / Nuxt            → vue    (dedicated parser)
+ *   - Svelte / SvelteKit    → svelte (dedicated parser)
+ */
+const FRAMEWORK_TO_LANGUAGE: Record<Framework, EditorLanguage> = {
+  react: "tsx",
+  next: "tsx",
+  remix: "tsx",
+  angular: "typescript",
+  nest: "typescript",
+  node: "javascript",
+  express: "javascript",
+  vue: "vue",
+  nuxt: "vue",
+  svelte: "svelte",
+};
+
+/** Resolve a framework to its editor flavor. */
+export function languageForFramework(fw: Framework): EditorLanguage {
+  return FRAMEWORK_TO_LANGUAGE[fw];
+}
+
+/**
+ * Best-fit framework label for an uploaded file's flavor, so the picker reflects
+ * what was dropped. Flavors map to several frameworks (tsx → React/Next/Remix);
+ * we pick the most representative default for each.
+ */
+export function frameworkForLanguage(lang: EditorLanguage): Framework {
+  switch (lang) {
+    case "vue":
+      return "vue";
+    case "svelte":
+      return "svelte";
+    case "tsx":
+    case "jsx":
+      return "react";
+    case "typescript":
+      return "nest";
+    case "javascript":
+      return "node";
+  }
+}
+
+/** Which analyzer profile each flavor maps to. */
+export function profileOf(lang: EditorLanguage): Profile {
+  if (lang === "vue") return "vue";
+  if (lang === "svelte") return "svelte";
+  return "js";
+}
+
+/**
+ * Monaco editor mode for a given flavor. Monaco has no built-in Vue/Svelte mode
+ * without extra packages, so SFC files fall back to "html", which highlights
+ * their template markup acceptably. TSX rides the TS mode; JSX the JS mode.
+ */
+export function monacoMode(
+  lang: EditorLanguage,
+): "typescript" | "javascript" | "html" {
+  if (lang === "typescript" || lang === "tsx") return "typescript";
+  if (lang === "javascript" || lang === "jsx") return "javascript";
+  // vue, svelte
+  return "html";
 }
 
 /** Synthetic filename extension for pasted code in each flavor. */
-export function pastedExt(lang: EditorLanguage): ".ts" | ".tsx" | ".js" | ".jsx" {
+export function pastedExt(
+  lang: EditorLanguage,
+): ".ts" | ".tsx" | ".js" | ".jsx" | ".vue" | ".svelte" {
   switch (lang) {
     case "typescript":
       return ".ts";
@@ -38,6 +169,10 @@ export function pastedExt(lang: EditorLanguage): ".ts" | ".tsx" | ".js" | ".jsx"
       return ".js";
     case "jsx":
       return ".jsx";
+    case "vue":
+      return ".vue";
+    case "svelte":
+      return ".svelte";
   }
 }
 
@@ -50,6 +185,10 @@ function languageForExt(ext: string): EditorLanguage {
       return "jsx";
     case ".ts":
       return "typescript";
+    case ".vue":
+      return "vue";
+    case ".svelte":
+      return "svelte";
     // .js, .mjs, .cjs → plain JavaScript mode.
     default:
       return "javascript";
@@ -89,7 +228,7 @@ export async function readCodeFile(file: File): Promise<FileReadResult> {
     return {
       ok: false,
       error:
-        "Only JavaScript/TypeScript files are supported (.js .jsx .ts .tsx .mjs .cjs).",
+        "Only JavaScript/TypeScript and Vue/Svelte files are supported (.js .jsx .ts .tsx .mjs .cjs .vue .svelte).",
     };
   }
 

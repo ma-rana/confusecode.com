@@ -24,11 +24,12 @@ const WORKER_PATH = path.resolve(__dirname, WORKER_FILE);
 
 export function analyze(
   code: string,
+  ext: string,
   rules: Linter.RulesRecord,
 ): Promise<RawFinding[]> {
   return new Promise<RawFinding[]>((resolve, reject) => {
     const worker = new Worker(WORKER_PATH, {
-      workerData: { code, rules },
+      workerData: { code, ext, rules },
       // Preserve any loader flags (e.g. tsx) so the worker runs in dev too.
       execArgv: process.execArgv,
     });

@@ -15,8 +15,16 @@ import {
   summarize,
   type SessionState,
 } from "./session";
-import type { FileReadOk, EditorLanguage } from "./file-upload";
-import { monacoMode, pastedExt } from "./file-upload";
+import type { FileReadOk, EditorLanguage, Framework } from "./file-upload";
+import {
+  monacoMode,
+  pastedExt,
+  profileOf,
+  languageForFramework,
+  frameworkForLanguage,
+  FRAMEWORK_LABELS,
+  FRAMEWORK_ORDER,
+} from "./file-upload";
 import type {
   AnalyzeResponse,
   ReviewTypeOption,
@@ -41,7 +49,10 @@ type Status = "idle" | "analyzing" | "working" | "finished" | "error";
 
 export default function Home() {
   const [code, setCode] = useState<string>(STARTER);
-  const [language, setLanguage] = useState<EditorLanguage>("typescript");
+  const [language, setLanguage] = useState<EditorLanguage>("tsx");
+  // The framework the user selected in the picker. Drives `language` (and thus
+  // the editor mode + file extension sent). React is a sensible default.
+  const [framework, setFramework] = useState<Framework>("react");
   // The current file's display name. For pasted code we use a synthetic name.
   const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
@@ -68,6 +79,8 @@ export default function Home() {
   function loadFile(file: FileReadOk) {
     setCode(file.code);
     setLanguage(file.language);
+    // Sync the framework picker to match the uploaded file's flavor.
+    setFramework(frameworkForLanguage(file.language));
     setFilename(file.filename);
     setSession(emptySession());
     setStatus("idle");
@@ -146,6 +159,32 @@ export default function Home() {
     setStatus("idle");
   }
 
+  // Picking a framework sets the editor flavor it maps to (React→tsx, Vue→vue,
+  // etc.), which in turn drives the Monaco mode and the extension sent for
+  // pasted code. The framework label is just the user-facing name for that flavor.
+  function handleFrameworkChange(fw: Framework) {
+    setFramework(fw);
+    setLanguage(languageForFramework(fw));
+  }
+
+  // The analyzer profile of the current file/flavor. Framework presets only
+  // apply to matching profiles (e.g. Vue rules need a .vue file), so we filter
+  // the menu to presets that fit and keep the selection valid as files change.
+  const currentProfile = profileOf(language);
+  const visibleReviewTypes = reviewTypes.filter((r) =>
+    r.profiles.includes(currentProfile),
+  );
+
+  // If the current selection isn't valid for this file's profile, snap back to
+  // the first that is (the general presets always qualify), so the user never
+  // sits on a preset that's hidden or would be server-side-overridden.
+  useEffect(() => {
+    if (visibleReviewTypes.length === 0) return;
+    if (!visibleReviewTypes.some((r) => r.id === reviewType)) {
+      setReviewType(visibleReviewTypes[0]!.id);
+    }
+  }, [visibleReviewTypes, reviewType]);
+
   const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
   const progress = progressOf(session);
 
@@ -198,13 +237,13 @@ export default function Home() {
               />
             </div>
 
-            {reviewTypes.length > 0 && (
+            {visibleReviewTypes.length > 0 && (
               <div className="review-picker" role="group" aria-label="Review type">
                 <p className="panel-label">
                   <span>What kind of review?</span>
                 </p>
                 <div className="review-options">
-                  {reviewTypes.map((rt) => (
+                  {visibleReviewTypes.map((rt) => (
                     <button
                       key={rt.id}
                       className={`review-option ${
@@ -243,16 +282,17 @@ export default function Home() {
               <label className="lang-select-wrap">
                 <select
                   className="lang-select"
-                  value={language}
+                  value={framework}
                   onChange={(e) =>
-                    setLanguage(e.target.value as EditorLanguage)
+                    handleFrameworkChange(e.target.value as Framework)
                   }
-                  aria-label="Language"
+                  aria-label="Framework"
                 >
-                  <option value="typescript">TypeScript</option>
-                  <option value="tsx">TypeScript + JSX (.tsx)</option>
-                  <option value="javascript">JavaScript</option>
-                  <option value="jsx">JavaScript + JSX (.jsx)</option>
+                  {FRAMEWORK_ORDER.map((fw) => (
+                    <option key={fw} value={fw}>
+                      {FRAMEWORK_LABELS[fw]}
+                    </option>
+                  ))}
                 </select>
               </label>
 

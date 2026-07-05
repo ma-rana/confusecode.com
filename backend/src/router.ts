@@ -1,9 +1,14 @@
 /**
  * The language router (§4.3).
  *
- * Built now with a single row: JS/TS → ESLint. This is the future-proofing
- * seam. Adding a language later is: install its analyzer, add a row here,
- * write its finding→card translation — NO rewrite of the pipeline.
+ * Maps a validated extension to the analyzer that handles it. All rows here
+ * still resolve to ESLint — but ESLint now drives several parsers (JS/TS via
+ * typescript-eslint, .vue via vue-eslint-parser, .svelte via svelte-eslint-
+ * parser), selected per-extension inside the worker (see analyzers.ts).
+ *
+ * This is the future-proofing seam. Adding a language later is: install its
+ * analyzer, add a row here, write its finding→card translation — NO rewrite of
+ * the pipeline.
  *
  *   (future) ".py"  → "ruff"
  *   (future) ".go"  → "govet"
@@ -18,6 +23,8 @@ const ROUTES: Record<string, Analyzer> = {
   ".tsx": "eslint",
   ".mjs": "eslint",
   ".cjs": "eslint",
+  ".vue": "eslint",
+  ".svelte": "eslint",
 };
 
 /**

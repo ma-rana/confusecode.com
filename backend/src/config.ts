@@ -9,7 +9,7 @@ export const CONFIG = {
   MAX_LINES: 5_000, // "a few thousand"
   MAX_LINE_LENGTH: 5_000, // guards pathological single-line input
   MAX_NESTING_DEPTH: 200, // guards deeply-nested input that stresses the parser
-  ALLOWED_EXTENSIONS: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"] as const,
+  ALLOWED_EXTENSIONS: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"] as const,
 
   // ---- DoS resistance (§7.4) ----
   ANALYSIS_TIMEOUT_MS: 4_000, // hard wall-clock kill for a single analysis

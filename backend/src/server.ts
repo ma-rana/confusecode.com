@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import { CONFIG } from "./config.js";
 import { validateSubmission, type SubmissionInput } from "./validate.js";
 import { routeByExtension } from "./router.js";
+import { profileNameForExt } from "./analyzers.js";
 import { analyze } from "./analyze.js";
 import { educate } from "./educate.js";
 import { ConcurrencyGate } from "./semaphore.js";
@@ -12,6 +13,7 @@ import {
   DEFAULT_REVIEW_TYPE,
   isReviewType,
   rulesForReview,
+  reviewSupportsProfile,
 } from "./review-presets.js";
 
 /**
@@ -70,11 +72,12 @@ app.post("/api/analyze", async (req, reply) => {
     }
 
     // Resolve the review type. Unknown/absent → default preset (fail safe).
-    const reviewType = isReviewType(body.reviewType)
+    const requestedReview = isReviewType(body.reviewType)
       ? body.reviewType
       : DEFAULT_REVIEW_TYPE;
 
-    // Route to an analyzer. v1 has exactly one: JS/TS → ESLint.
+    // Route to an analyzer. All extensions resolve to ESLint, but ESLint drives
+    // different parsers per file family (JS/TS, Vue, Svelte) — see analyzers.ts.
     const analyzer = routeByExtension(result.ext);
     if (analyzer !== "eslint") {
       // Anonymous demand data: which unsupported languages people try (§Phase 3).
@@ -86,10 +89,21 @@ app.post("/api/analyze", async (req, reply) => {
       return reply.code(400).send({ error: "Unsupported language." });
     }
 
-    const findings = await analyze(result.code, rulesForReview(reviewType));
+    // A framework preset only works on the file families its plugin can parse
+    // (e.g. a Vue preset needs a .vue file). If the chosen review doesn't fit
+    // this file, fall back to the default general preset rather than erroring —
+    // it runs on any family, so the user still gets useful findings.
+    const profile = profileNameForExt(result.ext);
+    const reviewType =
+      profile && reviewSupportsProfile(requestedReview, profile)
+        ? requestedReview
+        : DEFAULT_REVIEW_TYPE;
+
+    const findings = await analyze(result.code, result.ext, rulesForReview(reviewType));
     // Translate raw findings into educational cards (§6.2) — the teaching layer.
     const cards = educate(findings);
     // Code is discarded here — nothing is retained (§4.4).
+    // Echo back the review actually used (may differ from requested on fallback).
     return reply.send({ cards, reviewType });
   } catch (err) {
     // Generic outward message; detail stays in server logs only (§7.10).

@@ -1,8 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { Linter } from "eslint";
-import tsParser from "@typescript-eslint/parser";
-import reactPlugin from "eslint-plugin-react";
-import reactHooksPlugin from "eslint-plugin-react-hooks";
+import { profileForExt } from "./analyzers.js";
+import type { Linter as LinterNS } from "eslint";
 
 /**
  * Runs INSIDE a worker thread (spawned by analyze.ts).
@@ -15,16 +14,14 @@ import reactHooksPlugin from "eslint-plugin-react-hooks";
  * Isolation rationale (§7.2, decision #16): the parser is an attack surface
  * (ReDoS, pathological nesting). Running here in a worker means a hung parse
  * is killed by the parent's wall-clock timeout and can't pin the event loop
- * or crash the server.
+ * or crash the server. This matters MORE now that several framework parsers
+ * (Vue, Svelte) run here — each is its own surface, all under one timeout.
  *
- * Design note: this worker imports NOTHING project-local (only eslint + parser,
- * which are real node_modules). The rule set is passed in via workerData rather
- * than imported here, so the worker resolves cleanly in both dev (tsx running
- * .ts) and production (compiled .js) without depending on a loader propagating
- * into the worker thread.
+ * Design note: the parser/plugin wiring lives in analyzers.ts. The worker just
+ * picks the profile for the submission's extension, builds its config, and runs
+ * verify() with a synthetic filename (required so the flat-config `files`
+ * matcher matches — see analyzers.ts). The rule set is passed in via workerData.
  */
-
-import type { Linter as LinterNS, ESLint } from "eslint";
 
 export interface RawFinding {
   ruleId: string | null;
@@ -36,67 +33,28 @@ export interface RawFinding {
 
 interface WorkerInput {
   code: string;
+  ext: string;
   rules: LinterNS.RulesRecord;
 }
 
-const { code, rules } = workerData as WorkerInput;
+const { code, ext, rules } = workerData as WorkerInput;
 
 const linter = new Linter();
 
-/**
- * ESLint 9's Linter defaults to FLAT CONFIG. In flat config, plugin rules are
- * not pre-registered with defineRule (that method is disabled here) — instead
- * the plugins are handed to verify() under a `plugins` key, and rules are
- * referenced by their namespaced id ("react/...", "react-hooks/...").
- *
- * Listing a plugin a given preset doesn't use is harmless: no rule fires unless
- * the preset turns it on. So we always expose the JS-ecosystem plugins and let
- * the preset (passed in via workerData) decide what's active. Core ESLint rules
- * still need no plugin entry.
- */
-const PLUGINS = {
-  react: reactPlugin,
-  "react-hooks": reactHooksPlugin,
-} as unknown as Record<string, ESLint.Plugin>;
+const profile = profileForExt(ext);
+if (!profile) {
+  // Should never happen — the router rejects unsupported extensions before we
+  // get here — but fail closed rather than guess a parser.
+  throw new Error(`No analyzer profile for extension: ${ext}`);
+}
 
 // Phase 3: the rule set is chosen by the review type the user picked (§6.1) and
 // passed in from the parent. The curated presets ARE the intelligence — no
-// model, just measured rules.
-const messages = linter.verify(code, {
-  plugins: PLUGINS,
-  // React plugin reads settings.react.version; "detect" needs the real package
-  // installed in the analyzed project, which we don't have (we only parse a
-  // snippet), so we pin a modern version to silence the version warning.
-  settings: { react: { version: "18.0" } },
-  languageOptions: {
-    ecmaVersion: 2022,
-    sourceType: "module",
-    // typescript-eslint parser handles both JS and TS syntax.
-    parser: tsParser,
-    parserOptions: {
-      // Enable JSX parsing so React/JSX presets can see the syntax.
-      ecmaFeatures: { jsx: true },
-    },
-    // Standard globals so common runtime names aren't false-flagged by no-undef.
-    globals: {
-      console: "readonly",
-      process: "readonly",
-      window: "readonly",
-      document: "readonly",
-      fetch: "readonly",
-      setTimeout: "readonly",
-      clearTimeout: "readonly",
-      setInterval: "readonly",
-      clearInterval: "readonly",
-      Promise: "readonly",
-      Math: "readonly",
-      JSON: "readonly",
-      Object: "readonly",
-      Array: "readonly",
-    },
-  },
-  rules,
-});
+// model, just measured rules. The profile supplies the parser + plugins.
+const config = profile.build(rules);
+const filename = profile.filenameFor(ext);
+
+const messages = linter.verify(code, config, filename);
 
 const findings: RawFinding[] = messages.map((m) => ({
   ruleId: m.ruleId,

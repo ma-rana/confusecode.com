@@ -226,6 +226,110 @@ export const RULE_EDUCATION: Record<string, EducationContent> = {
     investigate:
       "Identify which character on this line is the culprit, then research how JSX wants that character written in visible text.",
   },
+
+  // ---- Next.js ----
+  "@next/next/no-img-element": {
+    title: "A plain <img> in a Next app",
+    severity: "low",
+    why: "Next ships an Image component that handles lazy-loading, sizing, and format optimization for you. A raw <img> skips all of that, which tends to hurt load performance — often the thing Next was chosen to improve.",
+    concept: "framework-provided components",
+    difficulty: "beginner",
+    investigate:
+      "Research what Next's Image component does that a bare <img> doesn't, then weigh whether this image should use it.",
+  },
+
+  "@next/next/no-sync-scripts": {
+    title: "A synchronous script tag",
+    severity: "medium",
+    why: "A script without async or defer blocks the browser from rendering until it finishes downloading and running. In a framework built around fast first paint, that's a self-inflicted stall.",
+    concept: "script loading & blocking",
+    difficulty: "intermediate",
+    investigate:
+      "Look up the difference between a normal, an async, and a deferred script, and decide which one this actually needs to be.",
+  },
+
+  // ---- Node.js ----
+  "n/no-deprecated-api": {
+    title: "A deprecated Node API",
+    severity: "medium",
+    why: "This built-in was deprecated — it still runs today but is scheduled to change or vanish, and some deprecated APIs (like the old Buffer constructor) also carry real security footguns. Code resting on it is quietly on borrowed time.",
+    concept: "API lifecycles & deprecation",
+    difficulty: "intermediate",
+    investigate:
+      "Find the current, recommended replacement for this API and read why it was deprecated — the reason usually explains the risk.",
+  },
+
+  "n/handle-callback-err": {
+    title: "An ignored error argument",
+    severity: "high",
+    why: "Node's callback convention puts an error in the first argument, and this code never checks it. When that error fires it's silently swallowed, so failures pass unnoticed until something downstream breaks in a confusing way.",
+    concept: "error-first callbacks",
+    difficulty: "intermediate",
+    investigate:
+      "Find the callback's error parameter and trace what should happen when it's set. Research the 'error-first callback' convention if it's unfamiliar.",
+  },
+
+  "n/no-process-exit": {
+    title: "A hard process.exit()",
+    severity: "medium",
+    why: "Calling process.exit() kills the process immediately, cutting off pending I/O, logs, and cleanup mid-flight. In a server that usually means half-finished work and lost output rather than a graceful shutdown.",
+    concept: "process lifecycle & shutdown",
+    difficulty: "intermediate",
+    investigate:
+      "Research how to signal failure without an abrupt exit (exit codes, letting errors propagate) and consider what pending work this cut short.",
+  },
+
+  // ---- Vue ----
+  "vue/require-v-for-key": {
+    title: "A v-for without a key",
+    severity: "medium",
+    why: "Vue uses a key on each v-for item to track which one changed or moved. Without it, Vue falls back to reusing elements by position, which can carry over the wrong state — a stray input value or checkbox landing on the wrong row.",
+    concept: "list rendering & keys",
+    difficulty: "beginner",
+    investigate:
+      "Find what uniquely identifies each item in this list, then research why Vue wants that as the key rather than the index.",
+  },
+
+  "vue/no-mutating-props": {
+    title: "Mutating a prop directly",
+    severity: "high",
+    why: "Props flow down from parent to child; changing one inside the child breaks that one-way flow. The parent doesn't know, the value can be overwritten on the next render, and the bug is hard to trace because the two sides disagree about the truth.",
+    concept: "one-way data flow",
+    difficulty: "intermediate",
+    investigate:
+      "Research how Vue expects a child to request a change to a parent's value (events, or local copies) instead of editing the prop in place.",
+  },
+
+  "vue/no-use-v-if-with-v-for": {
+    title: "v-if and v-for on one element",
+    severity: "medium",
+    why: "When both sit on the same element, Vue's precedence between them isn't what most people expect, so the filtering often runs in a surprising order or over the wrong set. It's a readability and correctness trap at once.",
+    concept: "directive precedence",
+    difficulty: "intermediate",
+    investigate:
+      "Look up how Vue prioritises v-if versus v-for on the same node, then consider moving one of them to a wrapper or a computed list.",
+  },
+
+  // ---- Svelte ----
+  "svelte/no-at-html-tags": {
+    title: "Raw HTML injection with {@html}",
+    severity: "high",
+    why: "{@html} drops a string into the page as real markup, bypassing Svelte's escaping. If any part of that string comes from user input, it's a direct cross-site-scripting hole — one of the oldest and most damaging web vulnerabilities.",
+    concept: "XSS & output escaping",
+    difficulty: "advanced",
+    investigate:
+      "Trace where this HTML string comes from. Research what XSS is and why rendering untrusted HTML is dangerous before deciding how to handle it.",
+  },
+
+  "svelte/no-dupe-style-properties": {
+    title: "The same style property twice",
+    severity: "low",
+    why: "When a style lists the same property twice, the last one wins and the earlier is discarded. If you expected the first to apply, it's silently doing nothing.",
+    concept: "CSS declarations",
+    difficulty: "beginner",
+    investigate:
+      "Find both declarations of the property and decide which you meant to keep, then work out how the duplicate crept in.",
+  },
 };
 
 /**
