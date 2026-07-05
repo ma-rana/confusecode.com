@@ -25,11 +25,10 @@ import type { Linter } from "eslint";
 // ---- Review types: the "What kind of review?" menu ----
 
 export type ReviewType =
-  | "errors"
+  | "bugs"
   | "confusing"
-  | "security"
   | "dead-code"
-  | "runtime";
+  | "risky";
 
 export interface ReviewPreset {
   id: ReviewType;
@@ -39,73 +38,94 @@ export interface ReviewPreset {
 }
 
 const REVIEW_PRESETS: Record<ReviewType, ReviewPreset> = {
-  errors: {
-    id: "errors",
-    label: "Find errors",
-    blurb: "Correctness problems that break or misbehave at runtime.",
+  // 1. BUGS — things that are actually wrong and will misbehave at runtime.
+  //    The flagship review: high-signal, fires on real code, catches genuine
+  //    mistakes (undefined names, unreachable code, NaN comparisons, dupes).
+  bugs: {
+    id: "bugs",
+    label: "Find bugs",
+    blurb: "Real mistakes that break or misbehave — the highest-priority issues.",
     rules: {
       "no-undef": "error",
       "no-unreachable": "error",
       "no-dupe-keys": "error",
       "no-dupe-args": "error",
+      "no-dupe-else-if": "error",
       "no-cond-assign": ["warn", "always"],
       "use-isnan": "error",
       "no-constant-condition": "warn",
+      "no-self-compare": "warn",
+      "no-unsafe-negation": "error",
+      "valid-typeof": "error",
+      "no-fallthrough": "warn",
+      // Folded in from the old "runtime" review (its one unique, useful rule).
+      "no-use-before-define": ["warn", { functions: false }],
     },
   },
 
+  // 2. CONFUSING — code that's hard to follow. Readability & complexity, tuned
+  //    to fire on everyday code (not just extreme cases), since teaching
+  //    readability is core to the "learn debugging" mission.
   confusing: {
     id: "confusing",
     label: "Find confusing code",
-    blurb: "Code that's hard to follow — complex, deep, or ambiguous.",
+    blurb: "Code that's hard to follow — deep nesting, tangled logic, doing too much.",
     rules: {
-      complexity: ["warn", 8],
-      "max-depth": ["warn", 4],
+      complexity: ["warn", 6],
+      "max-depth": ["warn", 3],
       "no-shadow": "warn",
-      "max-lines-per-function": ["warn", { max: 50, skipBlankLines: true, skipComments: true }],
+      "max-lines-per-function": ["warn", { max: 40, skipBlankLines: true, skipComments: true }],
       "max-params": ["warn", 4],
+      "max-nested-callbacks": ["warn", 3],
+      "no-lonely-if": "warn",
+      "no-unneeded-ternary": "warn",
+      "no-nested-ternary": "warn",
+      "no-else-return": "warn",
     },
   },
 
-  security: {
-    id: "security",
-    label: "Find security risks",
-    blurb: "Patterns that tend to invite security problems.",
-    // Approximated with core rules until eslint-plugin-security is wired in.
-    rules: {
-      "no-eval": "error",
-      "no-implied-eval": "error",
-      "no-new-func": "error",
-      "no-script-url": "error",
-    },
-  },
-
+  // 3. DEAD CODE — written but doing nothing. Fires constantly on real code and
+  //    teaches a clear, satisfying tidy-up habit.
   "dead-code": {
     id: "dead-code",
     label: "Find dead code",
-    blurb: "Things that are declared or written but never actually do anything.",
+    blurb: "Things declared or written that never actually do anything.",
     rules: {
       "no-unused-vars": "warn",
       "no-unreachable": "warn",
       "no-empty": "warn",
       "no-useless-return": "warn",
+      "no-useless-catch": "warn",
+      "no-useless-concat": "warn",
+      "no-useless-escape": "warn",
+      "no-lone-blocks": "warn",
     },
   },
 
-  runtime: {
-    id: "runtime",
-    label: "Find runtime issues",
-    blurb: "Subtle behaviours that surface only when the code runs.",
+  // 4. RISKY HABITS — legal code that's a known source of bugs. Replaces the old
+  //    near-empty "security" review (which only caught eval, ~never seen in
+  //    learner code) with patterns that actually show up: loose equality, var,
+  //    implicit coercion, reassigning params. Still includes the eval family.
+  risky: {
+    id: "risky",
+    label: "Find risky habits",
+    blurb: "Legal but bug-prone patterns — loose equality, var, sneaky coercions.",
     rules: {
-      "no-undef": "error",
-      "no-use-before-define": ["warn", { functions: false }],
-      "use-isnan": "error",
-      "no-cond-assign": ["warn", "always"],
+      "eqeqeq": ["warn", "smart"],
+      "no-var": "warn",
+      "no-implicit-coercion": "warn",
+      "no-param-reassign": "warn",
+      "no-return-assign": ["warn", "always"],
+      "no-throw-literal": "warn",
+      "require-atomic-updates": "warn",
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-new-func": "error",
     },
   },
 };
 
-export const DEFAULT_REVIEW_TYPE: ReviewType = "errors";
+export const DEFAULT_REVIEW_TYPE: ReviewType = "bugs";
 
 // ---- Framework rule sets: chosen by the framework picker, not the menu ----
 

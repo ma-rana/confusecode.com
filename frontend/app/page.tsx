@@ -59,7 +59,7 @@ export default function Home() {
   // The current file's display name. For pasted code we use a synthetic name.
   const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
-  const [reviewType, setReviewType] = useState<string>("errors");
+  const [reviewType, setReviewType] = useState<string>("bugs");
   const [session, setSession] = useState<SessionState>(emptySession());
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");

@@ -94,6 +94,137 @@ export const RULE_EDUCATION: Record<string, EducationContent> = {
       "Look up how to correctly test whether a value is NaN. Understanding *why* the direct comparison fails is the lesson here, not just the replacement.",
   },
 
+  "valid-typeof": {
+    title: "A typeof compared to something impossible",
+    severity: "high",
+    why: "`typeof` only ever returns one of a small set of strings (\"string\", \"number\", \"undefined\", and so on). Comparing it to anything else — usually a typo like \"undefiend\" or \"boolena\" — means the check can never be true, so the branch it guards silently never runs.",
+    concept: "the typeof operator",
+    difficulty: "beginner",
+    investigate:
+      "Read the string you're comparing against carefully, then look up the exact set of values typeof can return. One of them is what you meant.",
+  },
+
+  "no-unsafe-negation": {
+    title: "A negation that binds the wrong way",
+    severity: "high",
+    why: "Something like `!a in b` or `!a instanceof B` reads as 'negate a, then test' — but that's almost never intended, and the result is a boolean tested against the operator, which is nonsense. The `!` is grabbing the wrong thing.",
+    concept: "operator precedence",
+    difficulty: "intermediate",
+    investigate:
+      "Work out what this line does step by step given how `!` binds, then compare that to what you meant. Research where parentheses would change the grouping.",
+  },
+
+  "no-self-compare": {
+    title: "A value compared to itself",
+    severity: "medium",
+    why: "Comparing something to itself is always true (or, for NaN, always false) — so the test tells you nothing. Usually one side was meant to be a different variable, and that mix-up is the real bug.",
+    concept: "comparisons",
+    difficulty: "beginner",
+    investigate:
+      "Look at both sides of the comparison. One of them is probably meant to be something else — what were you actually trying to check?",
+  },
+
+  "no-fallthrough": {
+    title: "A switch case that falls through",
+    severity: "medium",
+    why: "A case without a break (or return/throw) keeps running into the next case's code. Sometimes that's intended, but far more often it's a forgotten break, so two cases' logic run when only one should.",
+    concept: "switch statements",
+    difficulty: "beginner",
+    investigate:
+      "Decide whether this case was meant to continue into the next one. If not, research how to stop a case from falling through — and if it *was* intended, how to say so clearly.",
+  },
+
+  "no-dupe-else-if": {
+    title: "The same condition twice in an if-chain",
+    severity: "medium",
+    why: "An else-if branch repeats a condition already tested earlier in the chain, so it can never be reached — the first match always wins. One of the two was probably meant to test something different.",
+    concept: "conditional chains",
+    difficulty: "beginner",
+    investigate:
+      "Find the earlier branch with the same condition. Then ask what this later branch was *supposed* to check — that's the line with the real mistake.",
+  },
+
+  // ---- Risky habits ----
+  eqeqeq: {
+    title: "Loose equality (== instead of ===)",
+    severity: "medium",
+    why: "`==` converts types before comparing, so `0 == ''`, `null == undefined`, and `1 == true` are all true. Those surprises cause bugs that are hard to spot. `===` compares without the hidden conversion, so what you see is what you get.",
+    concept: "equality & type coercion",
+    difficulty: "beginner",
+    investigate:
+      "Research the difference between `==` and `===`, and look up a few of the surprising `==` results. Then decide whether this comparison really wants the loose behaviour.",
+  },
+
+  "no-var": {
+    title: "Using var instead of let/const",
+    severity: "low",
+    why: "`var` is function-scoped and hoisted, which leads to variables leaking out of blocks and being usable before their declaration — a steady source of subtle bugs. `let` and `const` are block-scoped and behave the way most people expect.",
+    concept: "variable declarations & scope",
+    difficulty: "beginner",
+    investigate:
+      "Research how `var` scoping differs from `let` and `const`. Understanding *why* block scope is safer is the point, not just swapping the keyword.",
+  },
+
+  "no-implicit-coercion": {
+    title: "A shortcut that hides a type conversion",
+    severity: "low",
+    why: "Tricks like `!!x`, `+x`, or `'' + x` quietly convert types using side effects of operators. They're compact but obscure — a reader has to know the trick to see that a boolean/number/string conversion is happening at all.",
+    concept: "type conversion & clarity",
+    difficulty: "intermediate",
+    investigate:
+      "Work out which type this expression is converting to, then research the explicit function that does the same thing. Ask which one a newcomer would understand faster.",
+  },
+
+  "no-param-reassign": {
+    title: "Reassigning a function parameter",
+    severity: "medium",
+    why: "Changing a parameter inside a function makes it lie about what was passed in, and if the argument is an object, mutating it can change the caller's data unexpectedly. Both make the function harder to reason about from the outside.",
+    concept: "parameters & side effects",
+    difficulty: "intermediate",
+    investigate:
+      "Decide whether you meant to change the caller's value or just needed a local working copy. Research why a fresh local variable is usually the safer choice.",
+  },
+
+  "no-nested-ternary": {
+    title: "Ternaries inside ternaries",
+    severity: "low",
+    why: "A ternary nested inside another packs several decisions onto one line with no names for the branches. It's dense to read and easy to misjudge which condition leads where — a classic 'looks clever, reads awful' pattern.",
+    concept: "readable conditionals",
+    difficulty: "beginner",
+    investigate:
+      "Try tracing each possible outcome and the path to it. If that takes real effort, research how the same logic reads as if/else or separate statements.",
+  },
+
+  "no-else-return": {
+    title: "An else after a return",
+    severity: "low",
+    why: "If the if-branch already returns, the code after it runs only when the condition was false — so the `else` wrapper adds a level of nesting without adding meaning. Dropping it flattens the function and reads more directly.",
+    concept: "guard clauses & early return",
+    difficulty: "beginner",
+    investigate:
+      "Look at what happens after the if. Research the 'early return' / 'guard clause' style and picture this function with the else removed.",
+  },
+
+  "no-lonely-if": {
+    title: "A lone if inside an else",
+    severity: "low",
+    why: "An `else` block that contains only an `if` is really an `else if` in disguise, with an extra layer of braces. Collapsing it makes the chain of conditions read as one sequence instead of a staircase.",
+    concept: "conditional structure",
+    difficulty: "beginner",
+    investigate:
+      "Look at the else block wrapping this if. Research how `else if` chains read, and picture this rewritten as one.",
+  },
+
+  "no-eval": {
+    title: "Using eval()",
+    severity: "high",
+    why: "`eval` runs a string as live code. If any part of that string ever comes from user input, it's a direct path to running attacker code; even when it doesn't, it defeats tooling, is slow, and hides what actually executes. It's almost never the right tool.",
+    concept: "dynamic code execution & injection",
+    difficulty: "intermediate",
+    investigate:
+      "Work out what you're trying to achieve with eval here, then research the safe, direct way to do that same thing (often an object lookup, JSON.parse, or a function).",
+  },
+
   // ---- Confusing code (complexity preset) ----
   complexity: {
     title: "This function has a lot going on",

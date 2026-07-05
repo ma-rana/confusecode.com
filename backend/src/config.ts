@@ -12,7 +12,11 @@ export const CONFIG = {
   ALLOWED_EXTENSIONS: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"] as const,
 
   // ---- DoS resistance (§7.4) ----
-  ANALYSIS_TIMEOUT_MS: 4_000, // hard wall-clock kill for a single analysis
+  // Wall-clock kill for a single analysis. This bounds the actual PARSE only —
+  // the one-time parser cold-load is warmed at startup and waits untimed (see
+  // analyze.ts), so it is not counted here. A real parse is a few dozen ms; the
+  // generous margin is headroom for a large/pathological input on a slow box.
+  ANALYSIS_TIMEOUT_MS: 8_000,
   MAX_CONCURRENT_ANALYSES: 4, // semaphore; excess gets 503 + Retry-After
   RATE_LIMIT_MAX: 30, // requests...
   RATE_LIMIT_WINDOW: "1 minute", // ...per window, per IP
