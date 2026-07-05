@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import { CONFIG } from "./config.js";
 import { validateSubmission, type SubmissionInput } from "./validate.js";
 import { routeByExtension } from "./router.js";
+import { detectFramework } from "./detect.js";
 import { analyze } from "./analyze.js";
 import { educate } from "./educate.js";
 import { ConcurrencyGate } from "./semaphore.js";
@@ -11,7 +12,6 @@ import {
   REVIEW_MENU,
   DEFAULT_REVIEW_TYPE,
   isReviewType,
-  isFramework,
   rulesFor,
 } from "./review-presets.js";
 
@@ -64,10 +64,7 @@ app.post("/api/analyze", async (req, reply) => {
 
   try {
     // Validate every input, every time (§7.2). Fail closed.
-    const body = (req.body ?? {}) as SubmissionInput & {
-      reviewType?: unknown;
-      framework?: unknown;
-    };
+    const body = (req.body ?? {}) as SubmissionInput & { reviewType?: unknown };
     const result = validateSubmission(body);
     if (!result.ok) {
       return reply.code(400).send({ error: result.error });
@@ -78,34 +75,35 @@ app.post("/api/analyze", async (req, reply) => {
       ? body.reviewType
       : DEFAULT_REVIEW_TYPE;
 
-    // Resolve the framework (drives which framework rules merge in). Unknown or
-    // absent → null, meaning "just the review rules, no framework overlay".
-    const framework = isFramework(body.framework) ? body.framework : null;
+    // Auto-detect the framework + parser from the code and extension (§4.3).
+    // The UI no longer asks; we infer. Detection may refine the extension too
+    // (e.g. a pasted Vue SFC validated as .ts is detected as .vue so the Vue
+    // parser runs). Detection never executes code — it's regex sniffing only.
+    const detected = detectFramework(result.code, result.ext);
 
-    // Route to an analyzer. All extensions resolve to ESLint, but ESLint drives
-    // different parsers per file family (JS/TS, Vue, Svelte) — see analyzers.ts.
-    const analyzer = routeByExtension(result.ext);
+    // Route on the DETECTED extension — that's the one the worker will parse.
+    const analyzer = routeByExtension(detected.ext);
     if (analyzer !== "eslint") {
       // Anonymous demand data: which unsupported languages people try (§Phase 3).
       // Logs the extension only — never the code.
       req.log.info(
-        { event: "unsupported_language", ext: result.ext },
+        { event: "unsupported_language", ext: detected.ext },
         "attempted unsupported language",
       );
       return reply.code(400).send({ error: "Unsupported language." });
     }
 
-    // The rule set = the chosen review type's rules PLUS the selected framework's
-    // rules. Framework rules only fire when the file's parser has that plugin
-    // active, which is guaranteed because the same framework choice picks the
-    // parser too. So "Vue + Find errors" runs Vue rules and error rules together.
-    const rules = rulesFor(reviewType, framework);
+    // The rule set = the chosen review type's rules PLUS the detected framework's
+    // rules (if any). So a pasted React component under "Find errors" runs the
+    // React rules and the error rules together, with no framework picker needed.
+    const rules = rulesFor(reviewType, detected.framework);
 
-    const findings = await analyze(result.code, result.ext, rules);
+    const findings = await analyze(result.code, detected.ext, rules);
     // Translate raw findings into educational cards (§6.2) — the teaching layer.
     const cards = educate(findings);
     // Code is discarded here — nothing is retained (§4.4).
-    return reply.send({ cards, reviewType });
+    // Echo the detected framework so the UI can show what was recognised.
+    return reply.send({ cards, reviewType, framework: detected.framework });
   } catch (err) {
     // Generic outward message; detail stays in server logs only (§7.10).
     req.log.error(

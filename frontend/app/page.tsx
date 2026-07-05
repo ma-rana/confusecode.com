@@ -15,15 +15,8 @@ import {
   summarize,
   type SessionState,
 } from "./session";
-import type { FileReadOk, EditorLanguage, Framework } from "./file-upload";
-import {
-  monacoMode,
-  pastedExt,
-  languageForFramework,
-  frameworkForLanguage,
-  FRAMEWORK_LABELS,
-  FRAMEWORK_ORDER,
-} from "./file-upload";
+import type { FileReadOk, EditorLanguage } from "./file-upload";
+import { monacoMode, pastedExt } from "./file-upload";
 import type {
   AnalyzeResponse,
   ReviewTypeOption,
@@ -46,12 +39,23 @@ function total(items) {
 
 type Status = "idle" | "analyzing" | "working" | "finished" | "error";
 
+// Display labels for auto-detected frameworks (server returns the lowercase id).
+const DETECTED_LABELS: Record<string, string> = {
+  react: "React",
+  next: "Next.js",
+  vue: "Vue.js",
+  nuxt: "Nuxt.js",
+  angular: "Angular",
+  svelte: "Svelte / SvelteKit",
+  node: "Node.js",
+  express: "Express.js",
+  nest: "NestJS",
+  remix: "Remix",
+};
+
 export default function Home() {
   const [code, setCode] = useState<string>(STARTER);
   const [language, setLanguage] = useState<EditorLanguage>("tsx");
-  // The framework the user selected in the picker. Drives `language` (and thus
-  // the editor mode + file extension sent). React is a sensible default.
-  const [framework, setFramework] = useState<Framework>("react");
   // The current file's display name. For pasted code we use a synthetic name.
   const [filename, setFilename] = useState<string>("pasted code");
   const [reviewTypes, setReviewTypes] = useState<ReviewTypeOption[]>([]);
@@ -59,6 +63,8 @@ export default function Home() {
   const [session, setSession] = useState<SessionState>(emptySession());
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  // What the server auto-detected from the last analysis, for a subtle UI note.
+  const [detected, setDetected] = useState<string | null>(null);
   // A validated file waiting on the user's confirm to switch sessions (§6.5).
   const [pendingFile, setPendingFile] = useState<FileReadOk | null>(null);
 
@@ -78,8 +84,6 @@ export default function Home() {
   function loadFile(file: FileReadOk) {
     setCode(file.code);
     setLanguage(file.language);
-    // Sync the framework picker to match the uploaded file's flavor.
-    setFramework(frameworkForLanguage(file.language));
     setFilename(file.filename);
     setSession(emptySession());
     setStatus("idle");
@@ -125,7 +129,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, filename: sentName, reviewType, framework }),
+        body: JSON.stringify({ code, filename: sentName, reviewType }),
       });
       const data = (await res.json()) as AnalyzeResponse;
 
@@ -138,6 +142,7 @@ export default function Home() {
       }
 
       setSession((prev) => foldAnalysis(prev, data.cards));
+      setDetected(data.framework);
       setStatus("working");
     } catch {
       setErrorMsg("Could not reach the analyzer. Check your connection.");
@@ -156,14 +161,6 @@ export default function Home() {
   function handleReset() {
     setSession(emptySession());
     setStatus("idle");
-  }
-
-  // Picking a framework sets the editor flavor it maps to (React→tsx, Vue→vue,
-  // etc.), which in turn drives the Monaco mode and the extension sent for
-  // pasted code. The framework label is just the user-facing name for that flavor.
-  function handleFrameworkChange(fw: Framework) {
-    setFramework(fw);
-    setLanguage(languageForFramework(fw));
   }
 
   const activeBlurb = reviewTypes.find((r) => r.id === reviewType)?.blurb;
@@ -238,6 +235,12 @@ export default function Home() {
                   ))}
                 </div>
                 {activeBlurb && <p className="review-blurb">{activeBlurb}</p>}
+                {detected && DETECTED_LABELS[detected] && (
+                  <p className="review-blurb">
+                    Detected {DETECTED_LABELS[detected]} — framework-specific
+                    checks were included.
+                  </p>
+                )}
               </div>
             )}
 
@@ -259,23 +262,6 @@ export default function Home() {
                   Finish now
                 </button>
               )}
-
-              <label className="lang-select-wrap">
-                <select
-                  className="lang-select"
-                  value={framework}
-                  onChange={(e) =>
-                    handleFrameworkChange(e.target.value as Framework)
-                  }
-                  aria-label="Framework"
-                >
-                  {FRAMEWORK_ORDER.map((fw) => (
-                    <option key={fw} value={fw}>
-                      {FRAMEWORK_LABELS[fw]}
-                    </option>
-                  ))}
-                </select>
-              </label>
 
               <span className="toolbar__hint">
                 {inSession

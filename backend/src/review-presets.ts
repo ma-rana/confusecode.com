@@ -239,11 +239,6 @@ export function isReviewType(value: unknown): value is ReviewType {
   return typeof value === "string" && value in REVIEW_PRESETS;
 }
 
-/** Type guard: is this string a known framework? */
-export function isFramework(value: unknown): value is Framework {
-  return typeof value === "string" && value in FRAMEWORK_RULES;
-}
-
 /**
  * Build the rule set for an analysis: the chosen review type's rules PLUS the
  * selected framework's rules. Framework rules come second so a framework can

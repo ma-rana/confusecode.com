@@ -164,8 +164,3 @@ export function profileForExt(ext: string): AnalyzerProfile | null {
   const name = EXT_TO_PROFILE[ext];
   return name ? PROFILES[name] : null;
 }
-
-/** Resolve an extension to its profile NAME, or null if unsupported. */
-export function profileNameForExt(ext: string): ProfileName | null {
-  return EXT_TO_PROFILE[ext] ?? null;
-}

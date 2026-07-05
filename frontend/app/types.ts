@@ -29,6 +29,8 @@ export interface ReviewTypeOption {
 export interface AnalyzeSuccess {
   cards: Card[];
   reviewType: string;
+  /** Framework auto-detected from the code, or null if none. */
+  framework: string | null;
 }
 
 export interface AnalyzeError {
