@@ -60,18 +60,54 @@ journalctl -u confusecode-backend | grep accounts
 # if it says "accounts DISABLED", .env isn't being read
 ```
 
-## Caddy
+## nginx (not Caddy)
 
-Append `deploy/Caddyfile` to `/etc/caddy/Caddyfile` — do **not** overwrite it,
-or basantarana.com goes down.
+The design doc planned for Caddy, but this VPS **already runs nginx** on 80/443
+serving basantarana.com. Installing Caddy would mean two web servers fighting for
+the same ports, so we use nginx. Same topology, different tool.
+
+We ADD a site — never edit the existing one. nginx routes by `server_name`, so
+both domains coexist on one IP.
 
 ```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+sudo cp deploy/nginx-confusecode.com.conf /etc/nginx/sites-available/confusecode.com
+sudo ln -s /etc/nginx/sites-available/confusecode.com /etc/nginx/sites-enabled/
+sudo nginx -t                      # MUST pass before reloading
+sudo systemctl reload nginx
 ```
 
-Point the `confusecode.com` DNS A record at this server **before** reloading, or
-the certificate request fails (Let's Encrypt must be able to reach the domain).
+`nginx -t` is not optional. A reload with a broken config takes basantarana.com
+down too.
+
+### HTTPS
+
+```bash
+sudo certbot --nginx -d confusecode.com -d www.confusecode.com
+```
+
+Certbot edits the site file in place to add the TLS listener, the HTTP→HTTPS
+redirect, and HSTS, and installs a renewal timer. DNS must already point here
+(it does: both `confusecode.com` and `www` resolve to this box).
+
+**After certbot succeeds**, `backend/.env` must say:
+
+```
+COOKIE_SECURE=true
+PUBLIC_ORIGIN=https://confusecode.com
+ALLOWED_ORIGIN=https://confusecode.com
+```
+
+then `sudo systemctl restart confusecode-backend`. Until HTTPS is live, those
+must be `false` / `http://…`, or the browser will silently discard the session
+cookie and sign-in will appear to do nothing at all.
+
+### Why the app trusts the proxy
+
+The backend sets `trustProxy: "127.0.0.1"`. Behind nginx every request arrives
+from loopback, so without this `req.ip` is the same for everyone and the per-IP
+rate limiter silently becomes a per-SITE limiter — 30 requests a minute shared by
+the whole internet. We trust `X-Forwarded-For` **only** from 127.0.0.1, because a
+client-settable header trusted from anywhere is just an IP-spoofing switch.
 
 ## Redeploying after a push
 

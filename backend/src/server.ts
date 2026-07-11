@@ -25,11 +25,26 @@ import {
  *   validate → rate-limit → route → analyze (worker+timeout) → educate → JSON
  *
  * Stateless. Stores nothing. Never logs submitted code (§7.9).
- * Binds localhost only — only Caddy is public (§4.5).
+ * Binds localhost only — only the reverse proxy (nginx) is public (§4.5).
  */
 
 const app = Fastify({
-  bodyLimit: 2_000_000, // 2 MB, mirrors the Caddy request-body cap
+  bodyLimit: 2_000_000, // 2 MB, mirrors the proxy's request-body cap
+
+  /**
+   * We sit behind nginx, so EVERY request arrives from 127.0.0.1. Without this,
+   * `req.ip` is the proxy's address for all users — and the per-IP rate limiter
+   * (§7.4) would silently become a per-SITE rate limiter: 30 requests a minute
+   * shared by the entire internet, and one busy user locks everyone out.
+   *
+   * Trusting only the loopback hop is the careful version. `X-Forwarded-For` is
+   * a client-settable header, so trusting it blindly lets anyone forge their IP
+   * and evade the limiter; here we accept it only from 127.0.0.1, which is the
+   * one address that cannot be spoofed from outside — nginx is the sole thing
+   * that can reach this port, because we bind to localhost.
+   */
+  trustProxy: "127.0.0.1",
+
   logger: {
     // Log events, not people. Never include request bodies.
     level: "info",
