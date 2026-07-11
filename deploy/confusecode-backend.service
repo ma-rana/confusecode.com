@@ -1,0 +1,59 @@
+# ConfuseCode — backend (Fastify analyzer API)
+#
+# Install:
+#   sudo cp deploy/confusecode-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now confusecode-backend
+#
+# Logs:   journalctl -u confusecode-backend -f
+# Reload: sudo systemctl restart confusecode-backend
+
+[Unit]
+Description=ConfuseCode backend (Fastify, static analysis API)
+# The backend needs Postgres for the account layer. `Wants` not `Requires`, on
+# purpose: if Postgres is down the backend should still boot and serve the
+# stateless analyzer, which is the actual product. It degrades, it doesn't die.
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=confusecode
+Group=confusecode
+WorkingDirectory=/var/www/confusecode.com/backend
+
+# Runs the COMPILED output (npm run build → dist/), not tsx. The .env is read by
+# Node's own --env-file-if-exists, so systemd never has to know the secrets and
+# they never appear in `systemctl show` or the journal.
+ExecStart=/usr/bin/node --env-file-if-exists=.env dist/server.js
+
+Restart=always
+RestartSec=3
+# If it crash-loops, back off rather than hammering the CPU forever.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Log to the journal, tagged so `journalctl -u` is clean.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=confusecode-backend
+
+# ---- Hardening -------------------------------------------------------------
+# This process parses hostile input for a living (that's the whole product), so
+# it gets the tightest box the app can still run in.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# The backend is stateless — it writes NOTHING to disk. So it gets no writable
+# paths at all. If this service ever needs to write a file, that's a red flag
+# worth stopping to think about.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,56 @@
+# ConfuseCode — frontend (Next.js)
+#
+# Install:
+#   sudo cp deploy/confusecode-frontend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now confusecode-frontend
+#
+# Logs: journalctl -u confusecode-frontend -f
+
+[Unit]
+Description=ConfuseCode frontend (Next.js)
+# Wants, not Requires: if the backend is down the frontend should still serve the
+# page (the user gets "could not reach the analyzer", not a dead site).
+After=network-online.target confusecode-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=confusecode
+Group=confusecode
+WorkingDirectory=/var/www/confusecode.com/frontend
+
+# PORT 3001, not 3000 — 3000 is taken by basantarana.com on this host. The port
+# comes from the environment (not the npm script) precisely so a second project
+# can share the box without either repo hardcoding a port.
+Environment=NODE_ENV=production
+Environment=PORT=3001
+# Where the frontend proxies /api/* to. Same-origin from the browser's view.
+Environment=BACKEND_URL=http://127.0.0.1:4000
+
+ExecStart=/usr/bin/npm start
+
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=confusecode-frontend
+
+# ---- Hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Next.js writes to .next/ at runtime (its cache), so unlike the backend this
+# service needs exactly one writable path — and only that one.
+ReadWritePaths=/var/www/confusecode.com/frontend/.next
+
+[Install]
+WantedBy=multi-user.target
