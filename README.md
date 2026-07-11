@@ -41,7 +41,11 @@ to localhost; in production only Caddy is public and proxies to them.
 
 ## Run it locally
 
-You need **Node.js 20+** (22 LTS recommended). Open two terminals.
+You need **Node.js 22.9+** (22 LTS). The backend reads `backend/.env` via Node's
+built-in `--env-file-if-exists` — no dotenv dependency — and that flag needs 22.9.
+If there's no `.env`, the backend simply boots in stateless mode.
+
+Open two terminals.
 
 ### 1. Backend
 
@@ -95,8 +99,20 @@ and Phase 1 setup checklists.
 - **XSS discipline** — findings render as escaped text; no `dangerouslySetInnerHTML`
   with user-derived content.
 
-## What's deliberately NOT here yet
+## Accounts & learning history (Phase 5) — optional
 
-Educational cards (Phase 2), review-type presets (Phase 3), the iterate/got-it/
-finish learning loop (Phase 4), and accounts/database/admin (Phase 5). Phase 1 is
-raw findings, done well.
+Signing in is optional and changes **nothing** about how code is analyzed. With
+no account, ConfuseCode is exactly what it always was: paste code, get cards,
+nothing leaves the browser.
+
+An account adds one thing — a memory of the *issues* you've worked through, so a
+card can tell you **"you've hit this 5× before, and fixed it once."** That's the
+whole feature. It stores rules, concepts and outcomes; it never stores your code,
+your filenames, or the lines an issue was on.
+
+The layer is strictly opt-in, twice over: signing in doesn't imply consent to be
+remembered (a separate switch does), and if `DATABASE_URL`/`COOKIE_SECRET` aren't
+set, the server boots stateless with no pool, no cookies, and no account routes
+at all.
+
+Setup, schema, routes and the security posture: **[`backend/db/README.md`](backend/db/README.md)**.

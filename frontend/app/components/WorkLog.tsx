@@ -1,10 +1,30 @@
 import type { TrackedIssue, IssueStatus } from "../session";
+import type { RuleHistory } from "../account";
 
 /**
  * The work-log view (§6.4): every issue seen this session, with its status
  * across revisions. Renders card content as escaped text (§7.6) and offers the
  * "Got it" learning act (§6.3). Never shows a fix.
+ *
+ * Phase 5 adds ONE line to a card: "you've hit this before". It's the entire
+ * user-visible payoff of having an account, and it's computed HERE, in the
+ * browser, by joining the cards you just got against the rule counts fetched
+ * from your history. The server never learns which rules fired on the code you
+ * just pasted — the two halves only ever meet on your machine.
  */
+
+/**
+ * The recall line. Tuned to inform, never to scold: it states the count, and if
+ * the user has actually fixed this rule before it says so, because "you've
+ * solved this one before" is the most useful thing you can tell someone who is
+ * stuck on it again.
+ */
+function recallLine(seen: number, fixed: number): string {
+  if (fixed > 0) {
+    return `You've hit this ${seen}× before — and fixed it ${fixed}×. You know this one.`;
+  }
+  return `You've hit this ${seen}× before, and not fixed it yet. Worth a proper read.`;
+}
 
 function statusLabel(issue: TrackedIssue): { text: string; kind: IssueStatus | "fixed" } {
   if (issue.goneFromAnalysis && issue.status !== "got-it") {
@@ -18,9 +38,12 @@ function statusLabel(issue: TrackedIssue): { text: string; kind: IssueStatus | "
 export function WorkLog({
   issues,
   onGotIt,
+  ruleHistory = {},
 }: {
   issues: TrackedIssue[];
   onGotIt: (id: string) => void;
+  /** Rule → past encounters. Empty when signed out or not opted in. */
+  ruleHistory?: RuleHistory;
 }) {
   if (issues.length === 0) {
     return (
@@ -46,6 +69,8 @@ export function WorkLog({
           const c = issue.card;
           const status = statusLabel(issue);
           const done = issue.goneFromAnalysis || issue.status !== "open";
+          // The join: this rule, against everything this user has done before.
+          const past = c.ruleId ? ruleHistory[c.ruleId] : undefined;
           return (
             <li
               key={issue.id}
@@ -71,6 +96,13 @@ export function WorkLog({
                 <p className="card__detail">
                   <span className="card__detail-label">analyzer</span>
                   {c.detail}
+                </p>
+              )}
+
+              {past && past.times_seen > 0 && (
+                <p className="card__recall">
+                  <span className="card__recall-label">before</span>
+                  {recallLine(past.times_seen, past.times_fixed)}
                 </p>
               )}
 

@@ -131,21 +131,42 @@ export async function createAuthSession(params: {
   return rows[0]!.id;
 }
 
-/** Resolve a session token hash to its user, if the session is still valid. */
+/**
+ * Resolve a session token hash to its user — the hot path on every request.
+ *
+ * Enforces BOTH expiry rules in SQL, in one round trip:
+ *   - absolute: expires_at > now()            (set at login, never extended)
+ *   - idle:     last_used_at > now() - idle   (a forgotten session dies on its own)
+ *
+ * Doing this in SQL (not in app code) means an expired session is unusable even
+ * if a caller forgets to check, and the `RETURNING` on the UPDATE gives us the
+ * touch-and-read atomically. A single expression, one lock, no race.
+ *
+ * Returns null for absent/expired/idle-timed-out sessions — indistinguishable to
+ * the caller, so there's nothing to probe.
+ */
 export async function getUserBySessionToken(
   tokenHash: string,
+  idleDays: number,
 ): Promise<UserRow | null> {
   const pool = getPool();
   const { rows } = await pool.query<UserRow>(
-    `UPDATE auth_sessions
-       SET last_used_at = now()
-     WHERE token_hash = $1 AND expires_at > now()
-     RETURNING user_id`,
-    [tokenHash],
+    `WITH touched AS (
+       UPDATE auth_sessions
+          SET last_used_at = now()
+        WHERE token_hash = $1
+          AND expires_at > now()
+          AND last_used_at > now() - ($2 || ' days')::interval
+        RETURNING user_id
+     )
+     UPDATE users u
+        SET last_seen_at = now()
+       FROM touched t
+      WHERE u.id = t.user_id
+      RETURNING u.*`,
+    [tokenHash, String(idleDays)],
   );
-  const userId = (rows[0] as unknown as { user_id?: string })?.user_id;
-  if (!userId) return null;
-  return getUserById(userId);
+  return rows[0] ?? null;
 }
 
 export async function deleteAuthSession(tokenHash: string): Promise<void> {
@@ -155,13 +176,36 @@ export async function deleteAuthSession(tokenHash: string): Promise<void> {
   ]);
 }
 
-/** Housekeeping: remove expired sessions. Safe to run on a schedule. */
-export async function purgeExpiredSessions(): Promise<number> {
+/** Log out everywhere — kill every session this user has. Used on account delete. */
+export async function deleteAllAuthSessions(userId: string): Promise<void> {
   const pool = getPool();
-  const { rowCount } = await pool.query(
-    `DELETE FROM auth_sessions WHERE expires_at <= now()`,
+  await pool.query(`DELETE FROM auth_sessions WHERE user_id = $1`, [userId]);
+}
+
+/**
+ * Housekeeping (§9.5). Runs on a schedule and deletes, unprompted:
+ *   - auth sessions past their absolute expiry OR their idle window
+ *   - learning history past its retention date
+ *
+ * Retention that only happens when a user asks isn't retention, it's a promise.
+ * This is the code that makes "we don't keep it forever" true by default.
+ */
+export async function purgeExpired(idleDays: number): Promise<{
+  sessions: number;
+  history: number;
+}> {
+  const pool = getPool();
+  const s = await pool.query(
+    `DELETE FROM auth_sessions
+      WHERE expires_at <= now()
+         OR last_used_at <= now() - ($1 || ' days')::interval`,
+    [String(idleDays)],
   );
-  return rowCount ?? 0;
+  const h = await pool.query(
+    `DELETE FROM learning_sessions
+      WHERE expires_at IS NOT NULL AND expires_at <= now()`,
+  );
+  return { sessions: s.rowCount ?? 0, history: h.rowCount ?? 0 };
 }
 
 // ---- Learning history ----
@@ -205,19 +249,25 @@ export async function saveLearningSession(params: {
     );
     const sessionId = rows[0]!.id;
 
-    for (const e of params.events) {
+    // All events in ONE statement via UNNEST of parallel arrays. Still fully
+    // parameterized ($3..$7 are arrays, not interpolated SQL), but it's a single
+    // round trip instead of N — a 60-issue session was 60 network hops before.
+    if (params.events.length > 0) {
       await client.query(
         `INSERT INTO learning_events
            (learning_session_id, user_id, rule_id, concept, severity, difficulty, outcome)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         SELECT $1, $2, r, c, s, d, o
+           FROM unnest(
+                  $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]
+                ) AS t(r, c, s, d, o)`,
         [
           sessionId,
           params.userId,
-          e.ruleId,
-          e.concept,
-          e.severity,
-          e.difficulty,
-          e.outcome,
+          params.events.map((e) => e.ruleId),
+          params.events.map((e) => e.concept),
+          params.events.map((e) => e.severity),
+          params.events.map((e) => e.difficulty),
+          params.events.map((e) => e.outcome),
         ],
       );
     }
@@ -265,6 +315,48 @@ export async function conceptCounts(
     [userId],
   );
   return rows.map((r) => ({ concept: r.concept, count: Number(r.count) }));
+}
+
+export interface RuleHistoryRow {
+  rule_id: string;
+  times_seen: number;
+  times_fixed: number;
+  last_seen: Date;
+}
+
+/**
+ * The payload behind "you've hit this before" (§5) — per RULE, because that's
+ * what a card carries. One row per rule the user has ever encountered, with how
+ * often they hit it, how often they actually fixed it, and when they last saw it.
+ *
+ * `times_fixed` vs `times_seen` is the interesting number: a rule seen eight
+ * times and fixed twice is a habit, not an accident, and that's exactly the
+ * thing worth telling a learner. Counts and rule names only — never code.
+ */
+export async function ruleHistory(userId: string): Promise<RuleHistoryRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    rule_id: string;
+    times_seen: string;
+    times_fixed: string;
+    last_seen: Date;
+  }>(
+    `SELECT rule_id,
+            COUNT(*)                                        AS times_seen,
+            COUNT(*) FILTER (WHERE outcome = 'fixed')       AS times_fixed,
+            MAX(created_at)                                 AS last_seen
+       FROM learning_events
+      WHERE user_id = $1 AND rule_id IS NOT NULL
+      GROUP BY rule_id
+      ORDER BY times_seen DESC`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    rule_id: r.rule_id,
+    times_seen: Number(r.times_seen),
+    times_fixed: Number(r.times_fixed),
+    last_seen: r.last_seen,
+  }));
 }
 
 /** Delete one saved session (ownership-checked). Part of user data rights (§9.5). */

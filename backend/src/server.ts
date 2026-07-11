@@ -1,7 +1,12 @@
 import Fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
-import { CONFIG } from "./config.js";
+import cookie from "@fastify/cookie";
+import { CONFIG, accountsEnabled } from "./config.js";
+import { registerAuthRoutes } from "./routes-auth.js";
+import { registerHistoryRoutes } from "./routes-history.js";
+import { purgeExpired } from "./db-queries.js";
+import { closePool } from "./db.js";
 import { validateSubmission, type SubmissionInput } from "./validate.js";
 import { routeByExtension } from "./router.js";
 import { detectFramework } from "./detect.js";
@@ -44,6 +49,40 @@ await app.register(rateLimit, {
   timeWindow: CONFIG.RATE_LIMIT_WINDOW,
   // @fastify/rate-limit returns 429 with Retry-After automatically.
 });
+
+/**
+ * ---- Phase 5: the account layer, and why it's conditional --------------------
+ *
+ * Accounts are a STRICTLY OPTIONAL layer bolted onto a system that works without
+ * them. If DATABASE_URL or COOKIE_SECRET is unset, none of the routes below are
+ * registered and no pool is ever opened — the server is exactly the stateless
+ * Phase 1–4 analyzer it always was. This is not a fallback, it's the design:
+ * the core product must never *need* a database, because the core product must
+ * never hold anything worth breaching.
+ *
+ * Everything the account layer adds is a memory of your PROGRESS. Not your code.
+ */
+const withAccounts = accountsEnabled();
+
+if (withAccounts) {
+  // Cookies are the only reason the account layer needs a plugin at all. The
+  // secret signs the short-lived OAuth `state` cookie; the session cookie itself
+  // is an opaque random token that needs no signing (there's nothing to forge).
+  await app.register(cookie, { secret: CONFIG.COOKIE_SECRET });
+  registerAuthRoutes(app);
+  registerHistoryRoutes(app);
+  app.log.info("accounts + history enabled (DATABASE_URL is set)");
+} else {
+  // Say so loudly at boot. A silently-disabled auth layer is how you end up
+  // wondering for an hour why /api/me 404s.
+  app.log.info(
+    "accounts DISABLED — stateless mode. Set DATABASE_URL and COOKIE_SECRET to enable.",
+  );
+  // Answer the UI's probes honestly rather than 404ing at them, so the frontend
+  // can simply not render a login button instead of erroring.
+  app.get("/api/auth/providers", async () => ({ providers: [] }));
+  app.get("/api/me", async () => ({ user: null }));
+}
 
 app.get("/health", async () => ({ status: "ok" }));
 
@@ -115,6 +154,58 @@ app.post("/api/analyze", async (req, reply) => {
     gate.release();
   }
 });
+
+/**
+ * ---- Retention, unprompted (§9.5) -------------------------------------------
+ *
+ * Expired auth sessions and out-of-retention history are deleted on a timer, not
+ * when someone remembers to ask. A retention policy that requires a human to run
+ * it isn't a policy — it's an intention. This is the code that makes the promise
+ * on the privacy page true while everyone's asleep.
+ *
+ * unref() so a pending timer never holds the process open during shutdown.
+ */
+let purgeTimer: NodeJS.Timeout | null = null;
+
+if (withAccounts) {
+  const sweep = async () => {
+    try {
+      const { sessions, history } = await purgeExpired(CONFIG.SESSION_IDLE_DAYS);
+      if (sessions || history) {
+        app.log.info({ event: "purge", sessions, history }, "expired data purged");
+      }
+    } catch (err) {
+      // A failed sweep must never take the analyzer down with it.
+      app.log.error(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "purge failed",
+      );
+    }
+  };
+  purgeTimer = setInterval(sweep, CONFIG.PURGE_INTERVAL_MS);
+  purgeTimer.unref();
+  void sweep(); // once at boot, so a restart after downtime cleans up immediately
+}
+
+/**
+ * Graceful shutdown. Stop accepting connections, let in-flight analyses finish,
+ * then close the pool. Without the closePool() a redeploy leaves Postgres holding
+ * dead connections until its own timeout reaps them.
+ */
+async function shutdown(signal: string): Promise<void> {
+  app.log.info({ event: "shutdown", signal }, "shutting down");
+  if (purgeTimer) clearInterval(purgeTimer);
+  try {
+    await app.close();
+    if (withAccounts) await closePool();
+  } catch (err) {
+    app.log.error({ err: (err as Error).message }, "error during shutdown");
+  }
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
 
 try {
   await app.listen({ port: CONFIG.PORT, host: CONFIG.HOST });

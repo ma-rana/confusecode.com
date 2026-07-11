@@ -27,4 +27,36 @@ export const CONFIG = {
   // In production the frontend is same-origin via Caddy, so CORS can stay locked.
   // For local dev the Next.js dev server runs on a different port.
   ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN ?? "http://localhost:3000",
+
+  // ---- Phase 5: accounts, sessions, history (§7.12, §9.5) ----
+  // The whole account layer is OPTIONAL. If DATABASE_URL is unset the server
+  // still boots and the stateless core (Phases 1–4) works exactly as before —
+  // the account routes simply aren't registered. Fail safe, not fail closed.
+
+  /** Public origin the browser sees. OAuth redirect URIs are built from this. */
+  PUBLIC_ORIGIN: process.env.PUBLIC_ORIGIN ?? "http://localhost:3000",
+
+  /** Cookie signing secret. REQUIRED when accounts are enabled. */
+  COOKIE_SECRET: process.env.COOKIE_SECRET ?? "",
+  /** Secure cookies (HTTPS only). Off in local dev, ON in production. */
+  COOKIE_SECURE: process.env.COOKIE_SECURE === "true",
+
+  /** Absolute session lifetime — a session dies this long after login, always. */
+  SESSION_ABSOLUTE_DAYS: 30,
+  /** Idle timeout — an untouched session dies this long after its last use. */
+  SESSION_IDLE_DAYS: 14,
+  /** How long the short-lived OAuth `state` cookie lives (CSRF guard). */
+  OAUTH_STATE_TTL_MS: 10 * 60 * 1000,
+
+  /** Default retention for saved learning history (§9.5). 0 = keep until deleted. */
+  HISTORY_RETENTION_DAYS: Number(process.env.HISTORY_RETENTION_DAYS ?? 365),
+  /** Max learning_events accepted in one save — bounds a hostile payload. */
+  MAX_EVENTS_PER_SAVE: 500,
+  /** How often the background purge sweeps expired sessions + history. */
+  PURGE_INTERVAL_MS: 60 * 60 * 1000, // hourly
 } as const;
+
+/** True when the account/history layer is configured. Checked at boot. */
+export function accountsEnabled(): boolean {
+  return Boolean(process.env.DATABASE_URL && process.env.COOKIE_SECRET);
+}

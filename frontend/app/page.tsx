@@ -7,6 +7,25 @@ import { ProgressBar } from "./components/ProgressBar";
 import { CompletionSummary } from "./components/CompletionSummary";
 import { FileDrop } from "./components/FileDrop";
 import { FileTabs } from "./components/FileTabs";
+import { AccountBar } from "./components/AccountBar";
+import { HistoryPanel } from "./components/HistoryPanel";
+import {
+  deleteAccount,
+  deleteSavedSession,
+  fetchMe,
+  fetchProviders,
+  fetchRuleHistory,
+  fetchSavedSessions,
+  logout as apiLogout,
+  saveSession,
+  setHistoryOptIn as apiSetOptIn,
+  toSavePayload,
+  type ConceptCount,
+  type Me,
+  type ProviderId,
+  type RuleHistory,
+  type SavedSession,
+} from "./account";
 import {
   emptySession,
   foldAnalysis,
@@ -94,6 +113,17 @@ export default function Home() {
   // What the server auto-detected from the last analysis, for a subtle UI note.
   const [detected, setDetected] = useState<string | null>(null);
 
+  // ---- Account + history (Phase 5) — all optional, all additive --------------
+  // Every one of these starts empty and STAYS empty when signed out. Nothing
+  // below changes how analysis works; it only adds memory on top of it.
+  const [me, setMe] = useState<Me | null>(null);
+  const [providers, setProviders] = useState<ProviderId[]>([]);
+  const [ruleHistory, setRuleHistory] = useState<RuleHistory>({});
+  const [concepts, setConcepts] = useState<ConceptCount[]>([]);
+  const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [savedNote, setSavedNote] = useState<string>("");
+
   useEffect(() => {
     fetch("/api/review-types")
       .then((r) => r.json() as Promise<ReviewTypesResponse>)
@@ -102,6 +132,40 @@ export default function Home() {
         setReviewType(d.default);
       })
       .catch(() => {});
+  }, []);
+
+  // Who am I, and which logins does this deployment even offer? Both are safe to
+  // call when accounts are disabled — the backend answers honestly with nulls.
+  useEffect(() => {
+    void fetchProviders().then(setProviders);
+    void fetchMe().then(setMe);
+  }, []);
+
+  // Load the past only once we know there IS a past to load. Signed out ⇒ no
+  // request is made at all, so an anonymous user's browser never talks to the
+  // history endpoints.
+  useEffect(() => {
+    if (!me) {
+      setRuleHistory({});
+      setConcepts([]);
+      setSavedSessions([]);
+      return;
+    }
+    void fetchRuleHistory().then((h) => {
+      setRuleHistory(h.rules);
+      setConcepts(h.concepts);
+    });
+    void fetchSavedSessions().then(setSavedSessions);
+  }, [me]);
+
+  // Strip the ?auth=ok|failed breadcrumb the OAuth callback redirects back with,
+  // so a refresh doesn't re-trigger the banner and the URL stays clean.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const auth = params.get("auth");
+    if (!auth) return;
+    if (auth === "failed") setErrorMsg("Sign-in didn't complete. Please try again.");
+    window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
   // ---- Active-file helpers ---------------------------------------------------
@@ -299,16 +363,72 @@ export default function Home() {
     patchActiveFile({ code: value ?? "" });
   }
 
-  function handleFinish() {
+  async function handleFinish() {
     // Mark THIS file finished. Persists per file, so switching away and back
     // keeps the completion summary; the tab turns the success colour.
     patchActiveFile({ finished: true });
+
+    // Then, and ONLY then, and only if the user is signed in AND has explicitly
+    // opted in, persist the *summary* of what they just did. Three conditions,
+    // deliberately: finishing is not consent, and signing in is not consent.
+    // Consent is the checkbox, and nothing is saved without it.
+    if (!me?.historyOptIn || session.revision === 0) return;
+
+    const ok = await saveSession(
+      toSavePayload(session, reviewType, activeFile.language),
+    );
+    if (!ok) return;
+
+    setSavedNote("Saved to your history — rules and concepts only.");
+    // Refresh the recall data so the very next analysis already knows about the
+    // issues from this session.
+    void fetchRuleHistory().then((h) => {
+      setRuleHistory(h.rules);
+      setConcepts(h.concepts);
+    });
+    void fetchSavedSessions().then(setSavedSessions);
+  }
+
+  // ---- Account actions -------------------------------------------------------
+
+  async function handleLogout() {
+    await apiLogout();
+    setMe(null);
+    setHistoryOpen(false);
+    setSavedNote("");
+  }
+
+  async function handleToggleOptIn(next: boolean) {
+    if (!me) return;
+    const ok = await apiSetOptIn(next);
+    if (ok) setMe({ ...me, historyOptIn: next });
+  }
+
+  async function handleDeleteSavedSession(id: string) {
+    const ok = await deleteSavedSession(id);
+    if (!ok) return;
+    setSavedSessions((prev) => prev.filter((s) => s.id !== id));
+    void fetchRuleHistory().then((h) => {
+      setRuleHistory(h.rules);
+      setConcepts(h.concepts);
+    });
+  }
+
+  async function handleDeleteAccount() {
+    const ok = await deleteAccount();
+    if (!ok) return;
+    // The account and every row attached to it are gone server-side. Drop every
+    // trace of it from the UI too — no stale avatar, no ghost history.
+    setMe(null);
+    setHistoryOpen(false);
+    setSavedNote("");
   }
 
   // "Keep working on this file" — clears only the active file's finished flag and
   // returns to its work-log. Other files and their completion state are untouched.
   function handleReset() {
     patchActiveFile({ finished: false });
+    setSavedNote("");
     setStatus(inSession ? "working" : "idle");
   }
 
@@ -330,7 +450,28 @@ export default function Home() {
         <span className="privacy-note">
           Your code is analyzed and never stored.
         </span>
+
+        {/* The account strip. Quiet by design — signed out, it's one line of
+           small type, and the tool is fully usable without ever touching it. */}
+        <AccountBar
+          me={me}
+          providers={providers}
+          onLogout={handleLogout}
+          onToggleOptIn={handleToggleOptIn}
+          onOpenHistory={() => setHistoryOpen((v) => !v)}
+          historyOpen={historyOpen}
+        />
       </header>
+
+      {historyOpen && me && (
+        <HistoryPanel
+          rules={ruleHistory}
+          concepts={concepts}
+          sessions={savedSessions}
+          onDeleteSession={handleDeleteSavedSession}
+          onDeleteAccount={handleDeleteAccount}
+        />
+      )}
 
       {/* File tabs — one per open file, each with its own independent work.
          Shown even for a single file so the workspace strip is always present. */}
@@ -344,7 +485,11 @@ export default function Home() {
       )}
 
       {isFinished ? (
-        <CompletionSummary summary={summarize(session)} onKeepGoing={handleReset} />
+        <CompletionSummary
+          summary={summarize(session)}
+          onKeepGoing={handleReset}
+          savedNote={savedNote}
+        />
       ) : (
         <>
           <section className="workbench">
@@ -462,7 +607,11 @@ export default function Home() {
           {inSession && status !== "analyzing" && (
             <>
               {progress.total > 0 && <ProgressBar progress={progress} />}
-              <WorkLog issues={session.issues} onGotIt={handleGotIt} />
+              <WorkLog
+                issues={session.issues}
+                onGotIt={handleGotIt}
+                ruleHistory={ruleHistory}
+              />
             </>
           )}
         </>

@@ -7,8 +7,14 @@
 -- not secrets. No passwords are stored (OAuth only), so there are none to leak.
 -- =============================================================================
 
--- UUIDs for primary keys (v4). pgcrypto ships with Postgres and gives gen_random_uuid().
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- UUIDs for primary keys (v4), via gen_random_uuid().
+--
+-- NOTE: this deliberately does NOT `CREATE EXTENSION pgcrypto`. gen_random_uuid()
+-- has been in the Postgres CORE since v13, and we target 14+. Requiring pgcrypto
+-- would mean requiring the separate `postgresql-contrib` package — which is not
+-- installed by default on Debian/Ubuntu, so the very first migration would fail
+-- on a clean VPS with a confusing "extension is not available". One less thing
+-- that has to be true for a deploy to work.
 
 -- -----------------------------------------------------------------------------
 -- users — minimal identity, sourced from an OAuth provider (§7.12).

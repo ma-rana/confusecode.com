@@ -9,9 +9,16 @@ import type { Summary } from "../session";
 export function CompletionSummary({
   summary,
   onKeepGoing,
+  savedNote = "",
 }: {
   summary: Summary;
   onKeepGoing: () => void;
+  /**
+   * Set only when the session's SUMMARY was written to the user's history (they
+   * were signed in and had opted in). The code itself is never part of that —
+   * see the note below, which changes wording but never its promise.
+   */
+  savedNote?: string;
 }) {
   const { total, understood, fixed, revisions, concepts, allClear } = summary;
 
@@ -62,9 +69,21 @@ export function CompletionSummary({
         </div>
       )}
 
+      {/* The promise is identical either way. Signed out, nothing at all was
+         written down. Signed in and opted in, the RULES you met were written
+         down — and your code still never left the browser. */}
       <p className="summary__note">
-        Nothing here was saved — your code stayed in your browser. Copy it out of
-        the editor if you want to keep it.
+        {savedNote ? (
+          <>
+            {savedNote} Your code stayed in your browser — copy it out of the
+            editor if you want to keep it.
+          </>
+        ) : (
+          <>
+            Nothing here was saved — your code stayed in your browser. Copy it
+            out of the editor if you want to keep it.
+          </>
+        )}
       </p>
 
       <button className="btn-analyze" onClick={onKeepGoing}>

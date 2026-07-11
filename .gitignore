@@ -2,6 +2,13 @@ node_modules/
 dist/
 .next/
 *.log
-.env
-.env.local
 .DS_Store
+
+# Secrets.
+# Phase 5 introduced real ones: the DB password, the cookie secret, and the OAuth
+# client secrets all live in .env. So ignore EVERY .env variant by default and
+# allow back only the examples, which contain no values. Listing individual
+# filenames is how a `.env.production` ends up in a public repo.
+.env
+.env.*
+!.env.example
