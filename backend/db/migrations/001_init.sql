@@ -125,8 +125,17 @@ CREATE INDEX learning_events_user_concept_idx ON learning_events (user_id, conce
 
 -- -----------------------------------------------------------------------------
 -- schema_migrations — tracks which migrations have run (simple, no ORM needed).
+--
+-- IF NOT EXISTS is load-bearing, not defensive habit. The runner (src/migrate.ts)
+-- must create this table BEFORE it can ask which migrations have already run —
+-- it's the bootstrap. So by the time 001 executes, the table is always already
+-- there, and a bare CREATE TABLE here would abort the very first migration on
+-- every fresh database with "relation schema_migrations already exists".
+--
+-- It stays declared here anyway so this file remains the complete picture of the
+-- schema, rather than one table's definition living only inside the runner.
 -- -----------------------------------------------------------------------------
-CREATE TABLE schema_migrations (
+CREATE TABLE IF NOT EXISTS schema_migrations (
   version     TEXT PRIMARY KEY,
   applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
